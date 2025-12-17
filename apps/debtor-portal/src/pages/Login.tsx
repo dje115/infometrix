@@ -14,26 +14,38 @@ import {
   Button,
   Typography,
   Alert,
+  CircularProgress,
 } from '@mui/material';
 import LanguageSelector from '../components/LanguageSelector';
+import { portalAPI } from '../services/api';
 
 const Login: React.FC = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
 
-    // TODO: Implement actual authentication
-    // For now, placeholder - will call POST /portal/sessions
-    if (code.length > 0) {
-      // Placeholder: navigate to case view
-      navigate(`/case/placeholder-${code}`);
-    } else {
+    try {
+      // Create portal session with case reference
+      // In production, code would be validated and mapped to case_id
+      const session = await portalAPI.createSession(code);
+      
+      // Store locale in session (for API to use)
+      // The API can use Accept-Language header or session locale
+      
+      // Navigate to case view
+      navigate(`/case/${session.case_id}`);
+    } catch (err: any) {
       setError(t('login.error'));
+      console.error('Login error:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -83,8 +95,9 @@ const Login: React.FC = () => {
               fullWidth
               variant="contained"
               sx={{ mt: 3, mb: 2 }}
+              disabled={loading}
             >
-              {t('login.submit')}
+              {loading ? <CircularProgress size={24} /> : t('login.submit')}
             </Button>
           </form>
         </Paper>

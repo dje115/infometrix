@@ -150,6 +150,29 @@ services:
       - infometrix-network
     restart: unless-stopped
 
+  # Debtor Portal (Multilingual React App)
+  debtor-portal:
+    build:
+      context: ./apps/debtor-portal
+      dockerfile: Dockerfile.dev
+    container_name: infometrix-debtor-portal
+    environment:
+      - VITE_API_URL=http://localhost:8001
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+    ports:
+      - "3002:3000"
+    volumes:
+      - ./apps/debtor-portal:/app
+      - /app/node_modules
+    depends_on:
+      - enforcement-api
+    networks:
+      - infometrix-network
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
   # Celery Worker (Background Task Processing)
   celery-worker:
     build:

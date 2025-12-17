@@ -13,6 +13,7 @@ import os
 # Import EnforceSense module
 from app.modules.enforcesense.module import EnforceSenseModule
 from app.modules.enforcesense.routes import router as enforcesense_router
+from app.modules.enforcesense.portal_routes import router as portal_router
 
 # Create FastAPI app
 app = FastAPI(
@@ -42,6 +43,9 @@ async def lifespan(app: FastAPI):
     
     # Register EnforceSense module routes
     app.include_router(enforcesense_router, prefix="/api/v1")
+    
+    # Register portal routes
+    app.include_router(portal_router, prefix="/api/v1")
     
     yield
     
