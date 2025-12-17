@@ -14,12 +14,17 @@ from datetime import datetime, timezone, date
 
 from app.core.dependencies import get_current_user, get_current_tenant, check_permission
 from app.core.database import get_async_db, SessionLocal
+from app.core.module_dependencies import require_module_enabled
 from app.models.tenant import User, Tenant
 from app.models.helpdesk import Ticket, TicketStatus, TicketPriority, TicketType
 from app.services.helpdesk_service import HelpdeskService
 from app.services.storage_service import StorageService
 
 router = APIRouter(prefix="/helpdesk", tags=["Helpdesk"])
+
+# Note: Module enablement is checked via require_module_enabled dependency
+# This should be added to routes that need module-level protection
+# For now, we'll add it to key routes as examples
 
 
 class TicketCreate(BaseModel):
@@ -130,7 +135,8 @@ async def create_ticket(
     ticket_data: TicketCreate,
     current_user: User = Depends(get_current_user),
     current_tenant: Tenant = Depends(get_current_tenant),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    _: bool = Depends(lambda: require_module_enabled("helpdesk"))
 ):
     """
     Create a new support ticket

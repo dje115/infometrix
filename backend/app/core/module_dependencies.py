@@ -17,11 +17,14 @@ from app.models.tenant import User, Tenant
 
 async def require_module_enabled(
     module_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_tenant: Tenant = Depends(get_current_tenant),
 ) -> bool:
     """
     Dependency to check if a module is enabled for the current tenant.
+    
+    Checks both tenant.enabled_modules list and feature flags.
+    CRM is always enabled regardless of these checks.
     
     Raises HTTPException if module is not enabled.
     
@@ -36,6 +39,10 @@ async def require_module_enabled(
     Raises:
         HTTPException: If module is not enabled
     """
+    # CRM is always enabled
+    if module_id == 'crm':
+        return True
+    
     # Get module registry
     module_registry = get_module_registry()
     module = module_registry.get_module(module_id)
@@ -46,10 +53,18 @@ async def require_module_enabled(
             detail=f"Module '{module_id}' not found"
         )
     
+    # Check tenant.enabled_modules list
+    tenant_enabled_modules = current_tenant.enabled_modules or []
+    if module_id not in tenant_enabled_modules:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Module '{module_id}' is not enabled for this tenant"
+        )
+    
     # Check if module is always enabled (modules without feature flags)
     module_feature_flag = getattr(module, 'feature_flag', None)
     if not module_feature_flag:
-        # Always enabled modules don't need feature flag check
+        # Always enabled modules (like Settings) just need to be in enabled_modules
         return True
     
     # Check feature flag
@@ -59,7 +74,7 @@ async def require_module_enabled(
     if not is_enabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Module '{module_id}' is not enabled for this tenant"
+            detail=f"Module '{module_id}' feature flag is not enabled for this tenant"
         )
     
     return True
@@ -105,7 +120,7 @@ def require_module_permission(permission: str):
 async def require_module_access(
     module_id: str,
     permission: Optional[str] = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
     current_tenant: Tenant = Depends(get_current_tenant),
 ) -> bool:

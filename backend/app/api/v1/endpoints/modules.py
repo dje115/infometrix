@@ -70,20 +70,26 @@ async def get_modules(
     all_modules = module_registry.get_all_modules()
     enabled_modules = []
     
+    # Get tenant's enabled_modules list
+    tenant_enabled_modules = current_tenant.enabled_modules or []
+    
     for module in all_modules.values():
-        # Check if module is enabled
-        # Modules without feature flags (enabledByDefault) are always enabled
-        # For now, we'll include all registered modules and let the frontend filter
-        # based on feature flags. The registry's get_enabled_modules only checks feature flags.
-        # We need to include modules that:
-        # 1. Don't have a feature flag (always enabled)
-        # 2. Have a feature flag that is enabled
+        module_id = module.module_id
+        
+        # CRM is always enabled
+        if module_id == 'crm':
+            enabled_modules.append(module)
+            continue
+        
+        # Check if module is in tenant's enabled_modules list
+        if module_id not in tenant_enabled_modules:
+            continue  # Skip modules not in enabled list
         
         # Check if module has a feature flag
         module_feature_flag = getattr(module, 'feature_flag', None)
         
         if not module_feature_flag:
-            # No feature flag means always enabled (like CRM)
+            # No feature flag means always enabled if in enabled_modules (like Settings)
             enabled_modules.append(module)
         else:
             # Check feature flag
