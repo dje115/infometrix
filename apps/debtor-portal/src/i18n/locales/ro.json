@@ -1,0 +1,25 @@
+{
+  "login": {
+    "title": "Portal Debitor",
+    "enterCode": "Introduceți codul de acces",
+    "codePlaceholder": "Cod de acces",
+    "submit": "Continuă",
+    "error": "Cod de acces invalid. Vă rugăm să încercați din nou."
+  },
+  "case": {
+    "title": "Detalii Caz",
+    "status": "Status",
+    "caseNumber": "Număr Caz",
+    "amount": "Sumă",
+    "dueDate": "Data Scadență",
+    "description": "Descriere",
+    "noCaseFound": "Cazul nu a fost găsit"
+  },
+  "common": {
+    "loading": "Se încarcă...",
+    "error": "A apărut o eroare",
+    "back": "Înapoi",
+    "language": "Limba"
+  }
+}
+

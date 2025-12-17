@@ -1,0 +1,25 @@
+{
+  "login": {
+    "title": "Portál Dlužníka",
+    "enterCode": "Zadejte svůj přístupový kód",
+    "codePlaceholder": "Přístupový kód",
+    "submit": "Pokračovat",
+    "error": "Neplatný přístupový kód. Zkuste to prosím znovu."
+  },
+  "case": {
+    "title": "Detaily Případu",
+    "status": "Status",
+    "caseNumber": "Číslo Případu",
+    "amount": "Částka",
+    "dueDate": "Datum Splatnosti",
+    "description": "Popis",
+    "noCaseFound": "Případ nebyl nalezen"
+  },
+  "common": {
+    "loading": "Načítání...",
+    "error": "Došlo k chybě",
+    "back": "Zpět",
+    "language": "Jazyk"
+  }
+}
+

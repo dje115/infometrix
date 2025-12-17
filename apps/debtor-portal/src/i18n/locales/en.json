@@ -1,0 +1,25 @@
+{
+  "login": {
+    "title": "Debtor Portal",
+    "enterCode": "Enter your access code",
+    "codePlaceholder": "Access code",
+    "submit": "Continue",
+    "error": "Invalid access code. Please try again."
+  },
+  "case": {
+    "title": "Case Details",
+    "status": "Status",
+    "caseNumber": "Case Number",
+    "amount": "Amount",
+    "dueDate": "Due Date",
+    "description": "Description",
+    "noCaseFound": "Case not found"
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "An error occurred",
+    "back": "Back",
+    "language": "Language"
+  }
+}
+
