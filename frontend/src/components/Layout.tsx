@@ -4,43 +4,19 @@ import {
   Drawer,
   AppBar,
   Toolbar,
-  List,
   Typography,
   Divider,
   IconButton,
-  ListItem,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
   Avatar,
   Menu,
-  MenuItem
+  MenuItem,
+  CircularProgress,
+  Alert
 } from '@mui/material';
 import {
   Menu as MenuIcon,
-  Dashboard as DashboardIcon,
-  People as PeopleIcon,
-  TrendingUp as LeadsIcon,
-  PersonAdd as PersonAddIcon,
-  Campaign as CampaignIcon,
-  Description as QuotesIcon,
-  Settings as SettingsIcon,
   Logout as LogoutIcon,
   AccountCircle,
-  Group as GroupIcon,
-  Business as CompetitorsIcon,
-  Security as SecurityIcon,
-  Architecture as ArchitectureIcon,
-  LocalShipping as LocalShippingIcon,
-  Psychology as PsychologyIcon,
-  Support as SupportIcon,
-  Timeline as TimelineIcon,
-  Assessment as AssessmentIcon,
-  Work as OpportunitiesIcon,
-  Description as ContractsIcon,
-  Assignment as AssignmentIcon,
-  Description as TemplateIcon,
-  Build as MacroIcon
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -49,7 +25,11 @@ import GlobalAIMonitor from './GlobalAIMonitor';
 import AIMonitorBadge from './AIMonitorBadge';
 import OnboardingTooltips from './OnboardingTooltips';
 import VersionDisplay from './VersionDisplay';
+import ModuleSwitcher from './ModuleSwitcher';
+import ModuleContextMenu from './ModuleContextMenu';
 import { settingsAPI } from '../services/api';
+import { useModules } from '../modules/hooks/useModules';
+import { useActiveModule } from '../modules/hooks/useActiveModule';
 
 const drawerWidth = 240;
 
@@ -66,6 +46,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [showOnboardingTooltips, setShowOnboardingTooltips] = useState(false);
 
   const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const userPermissions = user.permissions || [];
+  const isAdmin = user.role === 'super_admin' || user.role === 'admin' || user.role === 'tenant_admin';
+
+  // Get modules and active module
+  const { enabledModules, loading: modulesLoading, error: modulesError } = useModules(userPermissions, isAdmin);
+  const { activeModule } = useActiveModule();
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -95,9 +81,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                               typeof data.company_analysis === 'object' && 
                               Object.keys(data.company_analysis).length > 0);
       
-      // Check if user has seen tooltips before
-      const hasSeenTooltips = localStorage.getItem('onboarding-tooltips-seen');
-      
       // Show tooltips if no AI analysis (regardless of whether user has seen them before)
       if (!hasAIAnalysis && user.email) {
         setShowOnboardingTooltips(true);
@@ -124,34 +107,24 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     localStorage.setItem('onboarding-tooltips-seen', 'true');
   };
 
-  const menuItems = [
-    { text: t('navigation.dashboard'), icon: <DashboardIcon />, path: '/dashboard' },
-    { text: t('navigation.customers'), icon: <PeopleIcon />, path: '/customers' },
-    { text: 'Leads', icon: <PersonAddIcon />, path: '/leads-crm' },
-    { text: t('navigation.discoveries'), icon: <LeadsIcon />, path: '/leads' },
-    { text: 'Opportunities', icon: <OpportunitiesIcon />, path: '/opportunities' },
-    { text: t('navigation.planning'), icon: <ArchitectureIcon />, path: '/planning-applications' },
-    { text: t('navigation.campaigns'), icon: <CampaignIcon />, path: '/campaigns' },
-    { text: t('navigation.quotes'), icon: <QuotesIcon />, path: '/quotes' },
-    { text: 'Contracts', icon: <ContractsIcon />, path: '/contracts' },
-    { text: 'Helpdesk', icon: <SupportIcon />, path: '/helpdesk' },
-    { text: 'Helpdesk Performance', icon: <AssessmentIcon />, path: '/helpdesk/performance' },
-    { text: 'NPA Dashboard', icon: <AssignmentIcon />, path: '/helpdesk/npa-dashboard' },
-    { text: 'Knowledge Base', icon: <PsychologyIcon />, path: '/helpdesk/knowledge-base' },
-    { text: 'Ticket Templates', icon: <TemplateIcon />, path: '/helpdesk/templates' },
-    { text: 'Ticket Macros', icon: <MacroIcon />, path: '/helpdesk/macros' },
-    { text: 'SLA Management', icon: <AssessmentIcon />, path: '/sla' },
-    { text: 'SLA Dashboard', icon: <AssessmentIcon />, path: '/sla/dashboard' },
-    { text: 'SLA Reports', icon: <AssessmentIcon />, path: '/sla/reports' },
-    { text: 'Trends', icon: <TimelineIcon />, path: '/trends' },
-    { text: 'Metrics', icon: <AssessmentIcon />, path: '/metrics' },
-        { text: 'Suppliers', icon: <LocalShippingIcon />, path: '/suppliers' },
-        { text: t('navigation.competitors'), icon: <CompetitorsIcon />, path: '/competitors' },
-        { text: 'AI Prompts', icon: <PsychologyIcon />, path: '/prompts', adminOnly: true },
-    { text: t('navigation.users'), icon: <GroupIcon />, path: '/users' },
-    { text: 'Compliance', icon: <SecurityIcon />, path: '/compliance', adminOnly: true },
-    { text: t('navigation.settings'), icon: <SettingsIcon />, path: '/settings' },
-  ];
+  // Get page title from current route
+  const getPageTitle = () => {
+    // Try to find title from active module's nav items
+    if (activeModule && enabledModules.length > 0) {
+      const module = enabledModules.find(m => m.key === activeModule);
+      if (module) {
+        const navItem = module.navItems.find(item => {
+          if (item.path === location.pathname) return true;
+          if (!item.path.endsWith('/') && location.pathname.startsWith(item.path + '/')) return true;
+          return false;
+        });
+        if (navItem) {
+          return navItem.text;
+        }
+      }
+    }
+    return 'Infometrix';
+  };
 
   const drawer = (
     <div>
@@ -161,39 +134,39 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         </Typography>
       </Toolbar>
       <Divider />
-      <List>
-        {menuItems.map((item) => {
-          // Check if item requires admin access
-          const user = JSON.parse(localStorage.getItem('user') || '{}');
-          const isAdmin = user.role === 'super_admin' || user.role === 'admin' || user.role === 'tenant_admin';
-          if ((item as any).adminOnly && !isAdmin) {
-            return null;
-          }
+      
+      {/* Module Switcher - at top of drawer */}
+      {modulesLoading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+          <CircularProgress size={24} />
+        </Box>
+      ) : modulesError ? (
+        <Box sx={{ p: 2 }}>
+          <Alert severity="warning" sx={{ fontSize: '0.75rem' }}>
+            Failed to load modules
+          </Alert>
+        </Box>
+      ) : enabledModules.length > 0 ? (
+        <>
+          <ModuleSwitcher enabledModules={enabledModules} />
+          <Divider />
           
-          return (
-            <ListItem key={item.text} disablePadding>
-              <ListItemButton
-                selected={location.pathname === item.path}
-                onClick={() => navigate(item.path)}
-              >
-                <ListItemIcon>{item.icon}</ListItemIcon>
-                <ListItemText primary={item.text} />
-              </ListItemButton>
-            </ListItem>
-          );
-        })}
-      </List>
+          {/* Context Menu - shows nav items for active module */}
+          <ModuleContextMenu
+            moduleKey={activeModule}
+            userPermissions={userPermissions}
+            isAdmin={isAdmin}
+          />
+        </>
+      ) : (
+        <Box sx={{ p: 2 }}>
+          <Typography variant="body2" color="text.secondary">
+            No modules available
+          </Typography>
+        </Box>
+      )}
+      
       <Divider />
-      <List>
-        <ListItem disablePadding>
-          <ListItemButton onClick={() => navigate('/settings')} data-tooltip="settings-menu">
-            <ListItemIcon>
-              <SettingsIcon />
-            </ListItemIcon>
-            <ListItemText primary="Settings" />
-          </ListItemButton>
-        </ListItem>
-      </List>
     </div>
   );
 
@@ -217,7 +190,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             <MenuIcon />
           </IconButton>
           <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
-            {menuItems.find(item => item.path === location.pathname)?.text || 'Infometrix'}
+            {getPageTitle()}
           </Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <AIMonitorBadge />
@@ -321,6 +294,3 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 };
 
 export default Layout;
-
-
-

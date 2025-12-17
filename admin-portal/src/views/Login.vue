@@ -3,7 +3,7 @@
     <el-card class="login-card">
       <template #header>
         <div class="card-header">
-          <h2>CCS Admin Portal</h2>
+          <h2>Infometrix Admin Portal</h2>
           <p>System Administration</p>
         </div>
       </template>
@@ -66,7 +66,7 @@ export default {
     const error = ref('')
     
     const loginForm = reactive({
-      email: 'admin@ccs.com',
+      email: 'admin@infometrix.com',
       password: 'admin123'
     })
     

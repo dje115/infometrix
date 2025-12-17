@@ -277,7 +277,17 @@ async def list_prompts(
         if is_active is not None:
             stmt = stmt.where(AIPrompt.is_active == is_active)
         if is_system is not None:
-            stmt = stmt.where(AIPrompt.is_system == is_system)
+            if is_system:
+                # System prompts must have is_system=True AND tenant_id IS NULL
+                stmt = stmt.where(
+                    and_(
+                        AIPrompt.is_system == True,
+                        AIPrompt.tenant_id.is_(None)
+                    )
+                )
+            else:
+                # Non-system prompts have is_system=False
+                stmt = stmt.where(AIPrompt.is_system == False)
         else:
             # If not filtering by is_system, get both system and tenant prompts
             # System prompts: is_system=True AND tenant_id IS NULL

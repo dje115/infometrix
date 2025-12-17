@@ -42,8 +42,8 @@ const Users = lazy(() => import('./pages/Users'));
 const Settings = lazy(() => import('./pages/Settings'));
 const Suppliers = lazy(() => import('./pages/Suppliers'));
 const PromptManagement = lazy(() => import('./pages/PromptManagement'));
-const Helpdesk = lazy(() => import('./pages/Helpdesk'));
-const TicketDetail = lazy(() => import('./pages/TicketDetail'));
+const Helpdesk = lazy(() => import('./modules/helpdesk/pages/Helpdesk'));
+const TicketDetail = lazy(() => import('./modules/helpdesk/pages/TicketDetail'));
 const AgentDashboard = lazy(() => import('./pages/AgentDashboard'));
 const TrendsDashboard = lazy(() => import('./pages/TrendsDashboard'));
 const MetricsDashboard = lazy(() => import('./pages/MetricsDashboard'));
@@ -51,16 +51,19 @@ const Contracts = lazy(() => import('./pages/Contracts'));
 const ContractTemplates = lazy(() => import('./pages/ContractTemplates'));
 const ContractTemplateEditor = lazy(() => import('./pages/ContractTemplateEditor'));
 const ContractDetail = lazy(() => import('./pages/ContractDetail'));
-const SLAManagement = lazy(() => import('./pages/SLAManagement'));
-const SLADashboard = lazy(() => import('./pages/SLADashboard'));
-const SLAReportBuilder = lazy(() => import('./pages/SLAReportBuilder'));
+const SLAManagement = lazy(() => import('./modules/helpdesk/pages/SLAManagement'));
+const SLADashboard = lazy(() => import('./modules/helpdesk/pages/SLADashboard'));
+const SLAReportBuilder = lazy(() => import('./modules/helpdesk/pages/SLAReportBuilder'));
 const CustomerSLAReport = lazy(() => import('./pages/CustomerSLAReport'));
-const HelpdeskPerformance = lazy(() => import('./pages/HelpdeskPerformance'));
-const NPADashboard = lazy(() => import('./components/NPADashboard'));
-const KnowledgeBase = lazy(() => import('./pages/KnowledgeBase'));
-const TicketTemplates = lazy(() => import('./pages/TicketTemplates'));
-const TicketMacros = lazy(() => import('./pages/TicketMacros'));
+const HelpdeskPerformance = lazy(() => import('./modules/helpdesk/pages/HelpdeskPerformance'));
+const NPADashboard = lazy(() => import('./modules/helpdesk/components/NPADashboard'));
+const KnowledgeBase = lazy(() => import('./modules/helpdesk/pages/KnowledgeBase'));
+const TicketTemplates = lazy(() => import('./modules/helpdesk/pages/TicketTemplates'));
+const TicketMacros = lazy(() => import('./modules/helpdesk/pages/TicketMacros'));
 const Compliance = lazy(() => import('./pages/Compliance'));
+const EnforceSenseDashboard = lazy(() => import('./modules/enforcesense/pages/EnforceSenseDashboard'));
+const EnforceSenseCases = lazy(() => import('./modules/enforcesense/pages/Cases'));
+const EnforceSenseReports = lazy(() => import('./modules/enforcesense/pages/Reports'));
 
 // Loading fallback component
 const LoadingFallback = () => (
@@ -483,6 +486,30 @@ function App() {
             element={
               <ProtectedRoute>
                 <TicketMacros />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/enforcesense"
+            element={
+              <ProtectedRoute>
+                <EnforceSenseDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/enforcesense/cases"
+            element={
+              <ProtectedRoute>
+                <EnforceSenseCases />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/enforcesense/reports"
+            element={
+              <ProtectedRoute>
+                <EnforceSenseReports />
               </ProtectedRoute>
             }
           />

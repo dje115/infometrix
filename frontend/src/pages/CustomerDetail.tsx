@@ -96,7 +96,7 @@ import CustomerTimeline from '../components/CustomerTimeline';
 import ContactDialog from '../components/ContactDialog';
 import CustomerContractsTab from '../components/CustomerContractsTab';
 import CustomerPatternAnalysis from '../components/CustomerPatternAnalysis';
-import CustomerSLAHistory from '../components/CustomerSLAHistory';
+import CustomerSLAHistory from '../modules/helpdesk/components/CustomerSLAHistory';
 import { sanitizeMarkdownBold } from '../utils/sanitize';
 
 const CustomerDetail: React.FC = () => {

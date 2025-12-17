@@ -1,5 +1,5 @@
 # Start Development Environment
-# This script starts the CCS Quote Tool v2 in DEVELOPMENT mode with hot-reload enabled
+# This script starts Infometrix in DEVELOPMENT mode with hot-reload enabled
 # 
 # Development URLs (same as production - only one can run at a time):
 # - Frontend:      http://localhost:3000
@@ -12,7 +12,7 @@
 # - Development-optimized build
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  CCS Quote Tool v2 - DEVELOPMENT MODE" -ForegroundColor Cyan
+Write-Host "  Infometrix - DEVELOPMENT MODE" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Starting development environment..." -ForegroundColor Green

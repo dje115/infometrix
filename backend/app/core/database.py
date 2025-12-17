@@ -96,15 +96,25 @@ async def init_db():
     """Initialize database with tables and default data"""
     print("🗄️ Initializing database...")
     
-    # Create all tables
-    async with async_engine.begin() as conn:
+    # Create all tables using sync engine for reliability
+    # This ensures tables are committed before async operations
+    # Use checkfirst=True to avoid errors on existing objects
+    try:
+        Base.metadata.create_all(bind=engine, checkfirst=True)
+        print("✅ Tables created successfully")
+    except Exception as e:
+        # If there are still errors, try to continue anyway
+        # The tables might already exist from a previous run
+        print(f"⚠️  Database initialization note: {str(e)[:200]}")
+        # Verify tables exist by checking for tenants table
         try:
-            await conn.run_sync(Base.metadata.create_all)
-        except Exception as e:
-            # Ignore errors about existing indexes/tables (migrations handle these)
-            if "already exists" not in str(e).lower() and "duplicate" not in str(e).lower():
-                raise
-            print(f"⚠️  Some database objects already exist (this is normal): {str(e)[:100]}")
+            with engine.connect() as conn:
+                result = conn.execute(text("SELECT 1 FROM tenants LIMIT 1"))
+                result.fetchone()
+                print("✅ Tables already exist, continuing...")
+        except Exception:
+            # Tables don't exist, but we'll try to continue
+            print("⚠️  Warning: Could not verify tables exist, but continuing initialization...")
     
     # Create default tenant and super admin
     await create_default_tenant()
@@ -118,16 +128,31 @@ async def init_db():
 
 async def create_default_tenant():
     """Create default CCS tenant and super admin user"""
+    # Retry mechanism in case tables aren't immediately visible
+    import asyncio
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            async with AsyncSessionLocal() as session:
+                # Check if default tenant already exists
+                existing_tenant = await session.execute(
+                    text("SELECT id FROM tenants WHERE slug = :slug"),
+                    {"slug": settings.DEFAULT_TENANT}
+                )
+                
+                if existing_tenant.fetchone():
+                    print(f"✅ Default tenant '{settings.DEFAULT_TENANT}' already exists")
+                    return
+                break
+        except Exception as e:
+            if "does not exist" in str(e) and attempt < max_retries - 1:
+                print(f"⚠️  Tables not yet visible (attempt {attempt + 1}/{max_retries}), retrying...")
+                await asyncio.sleep(0.5)
+                continue
+            else:
+                raise
+    
     async with AsyncSessionLocal() as session:
-        # Check if default tenant already exists
-        existing_tenant = await session.execute(
-            text("SELECT id FROM tenants WHERE slug = :slug"),
-            {"slug": settings.DEFAULT_TENANT}
-        )
-        
-        if existing_tenant.fetchone():
-            print(f"✅ Default tenant '{settings.DEFAULT_TENANT}' already exists")
-            return
         
         # Create default tenant
         tenant = Tenant(

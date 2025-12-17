@@ -5052,7 +5052,7 @@ async def get_ticket_time_entries(
             raise HTTPException(status_code=404, detail="Ticket not found")
         
         # Get time entries with user information
-        from app.models.user import User
+        from app.models.tenant import User
         time_entries = sync_db.query(TicketTimeEntry).join(
             User, TicketTimeEntry.user_id == User.id
         ).filter(

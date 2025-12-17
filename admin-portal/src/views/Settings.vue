@@ -167,8 +167,8 @@ export default {
     
     const settings = reactive({
       // System Configuration
-      system_name: 'CCS Quote Tool',
-      default_tenant: 'ccs',
+      system_name: 'Infometrix',
+      default_tenant: 'infometrix',
       max_api_calls: 100000,
       trial_period_days: 30,
       auto_suspend_inactive: true,

@@ -31,10 +31,12 @@ class BaseModule(ABC):
         pass
     
     @property
-    @abstractmethod
-    def feature_flag(self) -> str:
-        """Feature flag name to check (e.g., 'HELPDESK_ENABLED')"""
-        pass
+    def feature_flag(self) -> Optional[str]:
+        """
+        Feature flag name to check (e.g., 'HELPDESK_ENABLED').
+        Returns None for always-enabled modules (like CRM).
+        """
+        return None
     
     @property
     @abstractmethod
