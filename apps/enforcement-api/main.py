@@ -10,9 +10,9 @@ from contextlib import asynccontextmanager
 import uvicorn
 import os
 
-# Import shared types (will be created)
-# from packages.shared.types.tenant import TenantContext
-# from packages.shared.types.auth import AuthClaims
+# Import EnforceSense module
+from app.modules.enforcesense.module import EnforceSenseModule
+from app.modules.enforcesense.routes import router as enforcesense_router
 
 # Create FastAPI app
 app = FastAPI(
@@ -39,7 +39,9 @@ async def lifespan(app: FastAPI):
     
     # TODO: Initialize database connection
     # TODO: Initialize Redis if needed
-    # TODO: Register modules
+    
+    # Register EnforceSense module routes
+    app.include_router(enforcesense_router, prefix="/api/v1")
     
     yield
     
