@@ -80,6 +80,34 @@ services:
       - infometrix-network
     restart: unless-stopped
 
+  # Enforcement API (Development Mode)
+  enforcement-api:
+    build:
+      context: ./apps/enforcement-api
+      dockerfile: Dockerfile
+    container_name: infometrix-enforcement-api
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres_password_2025@postgres:5432/ccs_quote_tool
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=ccs_super_secret_key_2025_change_in_production
+      - ENFORCEMENT_API_PORT=8001
+      - ENVIRONMENT=development
+      - DEBUG=true
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./apps/enforcement-api:/app
+      - ./packages:/packages
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - infometrix-network
+    restart: unless-stopped
+    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+
   # React Frontend (Development Mode with Hot Reload)
   frontend:
     build:
