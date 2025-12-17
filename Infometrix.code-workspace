@@ -1,0 +1,22 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"files.exclude": {
+			"**/__pycache__": true,
+			"**/*.pyc": true,
+			"**/node_modules": true,
+			"**/.pytest_cache": true,
+			"**/build": true,
+			"**/dist": true
+		},
+		"python.defaultInterpreterPath": "${workspaceFolder}/backend",
+		"python.analysis.extraPaths": [
+			"${workspaceFolder}/backend"
+		]
+	}
+}
+

@@ -1,0 +1,345 @@
+#!/usr/bin/env python3
+"""
+Storage Service
+Handles file storage using MinIO (S3-compatible object storage)
+"""
+
+from typing import Optional, BinaryIO, Dict, Any, List
+from minio import Minio
+from minio.error import S3Error
+from minio.commonconfig import Tags
+from datetime import timedelta
+import logging
+from io import BytesIO
+
+from app.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+
+class StorageService:
+    """Service for managing file storage with MinIO"""
+    
+    def __init__(self):
+        """Initialize MinIO client"""
+        # MinIO configuration from settings
+        self.endpoint = settings.MINIO_ENDPOINT
+        self.access_key = settings.MINIO_ACCESS_KEY
+        self.secret_key = settings.MINIO_SECRET_KEY
+        self.secure = settings.MINIO_SECURE
+        self.region = settings.MINIO_REGION
+        
+        # Initialize MinIO client
+        self.client = Minio(
+            self.endpoint,
+            access_key=self.access_key,
+            secret_key=self.secret_key,
+            secure=self.secure,
+            region=self.region
+        )
+        
+        # Ensure default bucket exists
+        self.default_bucket = settings.MINIO_BUCKET
+        self._ensure_bucket_exists(self.default_bucket)
+    
+    def _ensure_bucket_exists(self, bucket_name: str):
+        """Ensure bucket exists, create if it doesn't"""
+        try:
+            if not self.client.bucket_exists(bucket_name):
+                self.client.make_bucket(bucket_name)
+                logger.info(f"Created bucket: {bucket_name}")
+        except S3Error as e:
+            logger.error(f"Error ensuring bucket exists: {e}")
+            raise
+    
+    async def upload_file(
+        self,
+        file_data: bytes | BinaryIO,
+        object_name: str,
+        bucket_name: Optional[str] = None,
+        content_type: Optional[str] = None,
+        metadata: Optional[Dict[str, str]] = None
+    ) -> str:
+        """
+        Upload a file to MinIO
+        
+        Args:
+            file_data: File data as bytes or file-like object
+            object_name: Object name (path) in bucket
+            bucket_name: Bucket name (defaults to configured bucket)
+            content_type: MIME type of the file
+            metadata: Optional metadata dictionary
+        
+        Returns:
+            Object name (path) of uploaded file
+        """
+        try:
+            import asyncio
+            bucket = bucket_name or self.default_bucket
+            self._ensure_bucket_exists(bucket)
+            
+            # Convert bytes to BytesIO if needed
+            if isinstance(file_data, bytes):
+                file_obj = BytesIO(file_data)
+                length = len(file_data)
+            else:
+                file_obj = file_data
+                file_obj.seek(0, 2)  # Seek to end
+                length = file_obj.tell()
+                file_obj.seek(0)  # Reset to start
+            
+            # Wrap synchronous MinIO call in executor to avoid blocking event loop
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None,
+                lambda: self.client.put_object(
+                    bucket_name=bucket,
+                    object_name=object_name,
+                    data=file_obj,
+                    length=length,
+                    content_type=content_type or 'application/octet-stream',
+                    metadata=metadata or {}
+                )
+            )
+            
+            logger.info(f"File uploaded successfully: {bucket}/{object_name}")
+            return object_name
+            
+        except S3Error as e:
+            logger.error(f"Error uploading file: {e}")
+            raise
+    
+    async def download_file(
+        self,
+        object_name: str,
+        bucket_name: Optional[str] = None
+    ) -> bytes:
+        """
+        Download a file from MinIO
+        
+        Args:
+            object_name: Object name (path) in bucket
+            bucket_name: Bucket name (defaults to configured bucket)
+        
+        Returns:
+            File data as bytes
+        """
+        try:
+            import asyncio
+            bucket = bucket_name or self.default_bucket
+            
+            # Wrap synchronous MinIO call in executor to avoid blocking event loop
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: self.client.get_object(bucket, object_name)
+            )
+            
+            data = response.read()
+            response.close()
+            response.release_conn()
+            
+            return data
+            
+        except S3Error as e:
+            logger.error(f"Error downloading file: {e}")
+            raise
+    
+    async def delete_file(
+        self,
+        object_name: str,
+        bucket_name: Optional[str] = None
+    ) -> bool:
+        """
+        Delete a file from MinIO
+        
+        Args:
+            object_name: Object name (path) in bucket
+            bucket_name: Bucket name (defaults to configured bucket)
+        
+        Returns:
+            True if deleted successfully
+        """
+        try:
+            import asyncio
+            bucket = bucket_name or self.default_bucket
+            
+            # Wrap synchronous MinIO call in executor to avoid blocking event loop
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None,
+                lambda: self.client.remove_object(bucket, object_name)
+            )
+            
+            logger.info(f"File deleted: {bucket}/{object_name}")
+            return True
+            
+        except S3Error as e:
+            logger.error(f"Error deleting file: {e}")
+            return False
+    
+    def get_presigned_url(
+        self,
+        object_name: str,
+        bucket_name: Optional[str] = None,
+        expires: timedelta = timedelta(hours=1)
+    ) -> str:
+        """
+        Generate a presigned URL for temporary access
+        
+        Args:
+            object_name: Object name (path) in bucket
+            bucket_name: Bucket name (defaults to configured bucket)
+            expires: Expiration time for the URL
+        
+        Returns:
+            Presigned URL string
+        """
+        try:
+            bucket = bucket_name or self.default_bucket
+            url = self.client.presigned_get_object(
+                bucket_name=bucket,
+                object_name=object_name,
+                expires=expires
+            )
+            return url
+            
+        except S3Error as e:
+            logger.error(f"Error generating presigned URL: {e}")
+            raise
+    
+    async def file_exists(
+        self,
+        object_name: str,
+        bucket_name: Optional[str] = None
+    ) -> bool:
+        """
+        Check if a file exists
+        
+        Args:
+            object_name: Object name (path) in bucket
+            bucket_name: Bucket name (defaults to configured bucket)
+        
+        Returns:
+            True if file exists
+        """
+        try:
+            import asyncio
+            bucket = bucket_name or self.default_bucket
+            
+            # Wrap synchronous MinIO call in executor to avoid blocking event loop
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None,
+                lambda: self.client.stat_object(bucket, object_name)
+            )
+            return True
+        except S3Error:
+            return False
+    
+    async def list_files(
+        self,
+        prefix: Optional[str] = None,
+        bucket_name: Optional[str] = None,
+        recursive: bool = True
+    ) -> List[Dict[str, Any]]:
+        """
+        List files in a bucket with optional prefix
+        
+        Args:
+            prefix: Prefix to filter objects (e.g., "tenant_id/user_id/")
+            bucket_name: Bucket name (defaults to configured bucket)
+            recursive: Whether to list recursively
+        
+        Returns:
+            List of file dictionaries with name, size, last_modified, etc.
+        """
+        try:
+            import asyncio
+            from datetime import datetime
+            
+            bucket = bucket_name or self.default_bucket
+            files = []
+            
+            # Wrap synchronous MinIO call in executor to avoid blocking event loop
+            loop = asyncio.get_event_loop()
+            objects = await loop.run_in_executor(
+                None,
+                lambda: list(self.client.list_objects(
+                    bucket_name=bucket,
+                    prefix=prefix or "",
+                    recursive=recursive
+                ))
+            )
+            
+            for obj in objects:
+                files.append({
+                    "name": obj.object_name,
+                    "size": obj.size,
+                    "last_modified": obj.last_modified.isoformat() if obj.last_modified else None,
+                    "etag": obj.etag,
+                    "content_type": obj.content_type if hasattr(obj, 'content_type') else None,
+                    "is_dir": obj.is_dir if hasattr(obj, 'is_dir') else False
+                })
+            
+            return files
+            
+        except S3Error as e:
+            logger.error(f"Error listing files: {e}")
+            raise
+    
+    async def get_file_info(
+        self,
+        object_name: str,
+        bucket_name: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get file metadata/info
+        
+        Args:
+            object_name: Object name (path) in bucket
+            bucket_name: Bucket name (defaults to configured bucket)
+        
+        Returns:
+            Dictionary with file metadata or None if not found
+        """
+        try:
+            import asyncio
+            
+            bucket = bucket_name or self.default_bucket
+            
+            # Wrap synchronous MinIO call in executor to avoid blocking event loop
+            loop = asyncio.get_event_loop()
+            stat = await loop.run_in_executor(
+                None,
+                lambda: self.client.stat_object(bucket, object_name)
+            )
+            
+            return {
+                "name": object_name,
+                "size": stat.size,
+                "last_modified": stat.last_modified.isoformat() if stat.last_modified else None,
+                "etag": stat.etag,
+                "content_type": stat.content_type,
+                "metadata": stat.metadata if hasattr(stat, 'metadata') else {}
+            }
+            
+        except S3Error as e:
+            if e.code == 'NoSuchKey':
+                return None
+            logger.error(f"Error getting file info: {e}")
+            raise
+
+
+# Global storage service instance
+_storage_service: Optional[StorageService] = None
+
+
+def get_storage_service() -> StorageService:
+    """Get or create storage service instance"""
+    global _storage_service
+    if _storage_service is None:
+        _storage_service = StorageService()
+    return _storage_service
+
+

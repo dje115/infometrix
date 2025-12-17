@@ -1,0 +1,172 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: infometrix-postgres
+    environment:
+      POSTGRES_DB: ccs_quote_tool
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_password_2025
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data  # Separate dev database
+    networks:
+      - infometrix-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache & Session Store
+  redis:
+    image: redis:7-alpine
+    container_name: infometrix-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data_dev:/data  # Separate dev Redis cache
+    networks:
+      - infometrix-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Backend (Development Mode)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: infometrix-backend
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres_password_2025@postgres:5432/ccs_quote_tool
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=ccs_super_secret_key_2025_change_in_production
+      - DEFAULT_TENANT=ccs
+      - SUPER_ADMIN_EMAIL=admin@ccs.com
+      - SUPER_ADMIN_PASSWORD=admin123
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - COMPANIES_HOUSE_API_KEY=${COMPANIES_HOUSE_API_KEY:-}
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - infometrix-network
+    restart: unless-stopped
+
+  # React Frontend (Development Mode with Hot Reload)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: infometrix-frontend
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - infometrix-network
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+  # Vue.js Admin Portal (Development Mode)
+  admin-portal:
+    build:
+      context: ./admin-portal
+      dockerfile: Dockerfile.dev
+    container_name: infometrix-admin-portal
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    ports:
+      - "3010:3010"
+    volumes:
+      - ./admin-portal:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - infometrix-network
+    restart: unless-stopped
+
+  # Celery Worker for Background Tasks
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: infometrix-celery-worker
+    command: celery -A app.core.celery_app worker --loglevel=info --concurrency=2
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres_password_2025@postgres:5432/ccs_quote_tool
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=ccs_super_secret_key_2025_change_in_production
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - COMPANIES_HOUSE_API_KEY=${COMPANIES_HOUSE_API_KEY:-}
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - infometrix-network
+    restart: unless-stopped
+
+  # Celery Beat for Scheduled Tasks (optional, for future use)
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: infometrix-celery-beat
+    command: celery -A app.core.celery_app beat --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres_password_2025@postgres:5432/ccs_quote_tool
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=ccs_super_secret_key_2025_change_in_production
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - infometrix-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data_dev:
+    driver: local
+  redis_data_dev:
+    driver: local
+
+networks:
+  infometrix-network:
+    driver: bridge
+

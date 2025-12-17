@@ -1,0 +1,255 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: infometrix-postgres
+    environment:
+      POSTGRES_DB: ccs_quote_tool
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_password_2025
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - infometrix-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache & Session Store
+  redis:
+    image: redis:7-alpine
+    container_name: infometrix-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - infometrix-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Backend (Development Mode)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+      args:
+        APP_VERSION: ${APP_VERSION:-3.0.6}
+        BUILD_DATE: ${BUILD_DATE:-}
+        BUILD_HASH: ${BUILD_HASH:-}
+    container_name: infometrix-backend
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres_password_2025@postgres:5432/ccs_quote_tool
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=ccs_super_secret_key_2025_change_in_production
+      - DEFAULT_TENANT=ccs
+      - SUPER_ADMIN_EMAIL=admin@ccs.com
+      - SUPER_ADMIN_PASSWORD=admin123
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - COMPANIES_HOUSE_API_KEY=${COMPANIES_HOUSE_API_KEY:-}
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin123
+      - MINIO_BUCKET=ccs-quote-tool
+      - MINIO_SECURE=false
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    networks:
+      - infometrix-network
+    restart: unless-stopped
+
+  # React Frontend (Development Mode with Hot Reload)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: infometrix-frontend
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - infometrix-network
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+  # Vue.js Admin Portal (Development Mode)
+  admin-portal:
+    build:
+      context: ./admin-portal
+      dockerfile: Dockerfile.dev
+    container_name: infometrix-admin-portal
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    ports:
+      - "3010:3010"
+    volumes:
+      - ./admin-portal:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - infometrix-network
+    restart: unless-stopped
+
+  # Celery Worker (Background Task Processing)
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+      args:
+        APP_VERSION: ${APP_VERSION:-3.0.6}
+        BUILD_DATE: ${BUILD_DATE:-}
+        BUILD_HASH: ${BUILD_HASH:-}
+    container_name: infometrix-celery-worker
+    command: celery -A app.core.celery_app worker --loglevel=info --concurrency=2
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres_password_2025@postgres:5432/ccs_quote_tool
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=ccs_super_secret_key_2025_change_in_production
+      - DEFAULT_TENANT=ccs
+      - SUPER_ADMIN_EMAIL=admin@ccs.com
+      - SUPER_ADMIN_PASSWORD=admin123
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - COMPANIES_HOUSE_API_KEY=${COMPANIES_HOUSE_API_KEY:-}
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin123
+      - MINIO_BUCKET=ccs-quote-tool
+      - MINIO_SECURE=false
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+      minio:
+        condition: service_started
+    networks:
+      - infometrix-network
+    restart: unless-stopped
+
+  # Celery Beat (Scheduled Tasks)
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+      args:
+        APP_VERSION: ${APP_VERSION:-3.0.6}
+        BUILD_DATE: ${BUILD_DATE:-}
+        BUILD_HASH: ${BUILD_HASH:-}
+    container_name: infometrix-celery-beat
+    command: celery -A app.core.celery_app beat --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres_password_2025@postgres:5432/ccs_quote_tool
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=ccs_super_secret_key_2025_change_in_production
+      - DEFAULT_TENANT=ccs
+      - SUPER_ADMIN_EMAIL=admin@ccs.com
+      - SUPER_ADMIN_PASSWORD=admin123
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - COMPANIES_HOUSE_API_KEY=${COMPANIES_HOUSE_API_KEY:-}
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin123
+      - MINIO_BUCKET=ccs-quote-tool
+      - MINIO_SECURE=false
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+      minio:
+        condition: service_started
+    networks:
+      - infometrix-network
+    restart: unless-stopped
+
+  # MailHog (SMTP Testing)
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: infometrix-mailhog
+    ports:
+      - "1026:1025"  # SMTP port (changed from 1025 to avoid conflict)
+      - "3006:8025"  # Web UI port (changed from 3005 to avoid conflict)
+    networks:
+      - infometrix-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8025"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MinIO (Object Storage for Product Images)
+  minio:
+    image: minio/minio:latest
+    container_name: infometrix-minio
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin123
+    ports:
+      - "9002:9000"  # API port (changed from 9000 to avoid conflict)
+      - "9092:9001"  # Console port (changed from 9090 to avoid conflict)
+    volumes:
+      - minio_data:/data
+    networks:
+      - infometrix-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+
+networks:
+  infometrix-network:
+    driver: bridge
+

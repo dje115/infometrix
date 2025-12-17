@@ -1,0 +1,39 @@
+# Infometrix Platform - Cursor AI Rules
+
+## Project Context
+This is the Infometrix platform - a multi-tenant CRM platform with modular architecture.
+
+## Architecture
+- **Backend:** FastAPI (Python) with PostgreSQL
+- **Frontend:** React 18 with TypeScript and Material-UI
+- **Admin Portal:** Vue.js 3 with Element Plus
+- **Module System:** Feature-flagged modules (Helpdesk, EnforceSense, Quoting, etc.)
+
+## Key Principles
+1. **Multi-tenant:** All data must be tenant-isolated
+2. **Modular:** Features organized as modules with feature flags
+3. **Type-safe:** Use TypeScript types and Python type hints
+4. **Incremental:** Keep changes safe and testable
+
+## Module System
+- Modules live in `backend/app/modules/`
+- Each module extends `BaseModule`
+- Feature flags control module visibility per tenant
+- Permissions follow format: `{module_id}:{action}`
+
+## Database
+- Database name: `ccs_quote_tool` (kept for compatibility)
+- Use migrations in `backend/migrations/`
+- Never rename tables without compatibility layer
+
+## Code Style
+- Python: PEP 8, type hints, docstrings
+- TypeScript: ESLint, Prettier
+- Commits: Conventional Commits format
+
+## Important Files
+- Module registry: `backend/app/modules/registry.py`
+- Feature flags: `backend/app/core/feature_flags.py`
+- API router: `backend/app/api/v1/api.py`
+- Frontend navigation: `frontend/src/components/Layout.tsx`
+

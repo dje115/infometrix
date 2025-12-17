@@ -1,0 +1,89 @@
+# CCS Quote Tool v2 - Backend Dependencies
+# FastAPI + Multi-tenant SaaS Platform
+
+# Core Framework
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+pydantic==2.10.3
+pydantic-settings==2.7.0
+
+# Database
+sqlalchemy==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+
+# Authentication & Security
+python-jose[cryptography]>=4.0.0
+passlib[argon2]==1.7.4
+argon2-cffi==25.1.0
+python-multipart==0.0.20
+fastapi-csrf-protect>=0.1.1
+pyotp==2.9.0  # TOTP for 2FA
+qrcode[pil]==8.0  # QR code generation for 2FA setup
+
+# Redis & Caching
+redis==5.2.1
+aioredis==2.0.1
+
+# Background Tasks
+celery==5.4.0
+
+# HTTP Client
+httpx==0.28.1
+aiohttp==3.11.11
+
+# AI & OpenAI
+openai==2.1.0  # v2.x includes Responses API with web_search tool
+google-generativeai>=0.3.0  # Google Gemini SDK
+anthropic>=0.34.0  # Anthropic Claude SDK
+cohere>=5.0.0  # Cohere SDK
+mistralai>=1.0.0  # Mistral AI SDK
+# xai>=0.1.0  # xAI (Grok) SDK - Commented out due to pandas conflict, using OpenAI-compatible instead
+
+# Data Processing
+beautifulsoup4==4.12.3
+lxml==5.3.0
+python-dateutil==2.9.0.post0
+
+# Email
+fastapi-mail==1.5.0
+jinja2==3.1.4
+
+# File Processing
+python-magic==0.4.27
+aiofiles==24.1.0
+
+# Monitoring & Logging
+structlog==24.4.0
+sentry-sdk[fastapi]==2.18.0
+
+# Development & Testing
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
+black==24.10.0
+isort==5.13.2
+flake8==7.1.1
+mypy==1.13.0
+
+# Production
+gunicorn==23.0.0
+psycopg2-binary==2.9.10
+
+# Additional Utilities
+click==8.1.7
+python-dotenv==1.0.1
+email-validator==2.2.0
+phonenumbers==8.13.55
+googlemaps==4.10.0  # Google Maps API for location services
+
+# Document generation
+python-docx>=1.1.0
+reportlab>=4.0.0
+
+# Excel/CSV processing
+pandas>=2.2.0
+openpyxl>=3.1.0
+
+# Object Storage (MinIO/S3)
+minio>=7.2.0

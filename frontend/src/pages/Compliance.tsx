@@ -1,0 +1,871 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Box,
+  Container,
+  Typography,
+  Tabs,
+  Tab,
+  Paper,
+  Alert,
+  CircularProgress,
+  FormControlLabel,
+  Checkbox,
+  Button,
+  TextField,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Chip,
+  Autocomplete,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemButton,
+  Divider,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Card,
+  CardContent,
+  Grid,
+  IconButton,
+  Tooltip,
+} from '@mui/material';
+import {
+  Security as SecurityIcon,
+  Gavel as GavelIcon,
+  VerifiedUser as VerifiedUserIcon,
+  Download as DownloadIcon,
+  Refresh as RefreshIcon,
+  ContentCopy as ContentCopyIcon,
+  CheckCircle as CheckCircleIcon,
+  Cancel as CancelIcon,
+  Warning as WarningIcon,
+  Info as InfoIcon,
+  Email as EmailIcon,
+} from '@mui/icons-material';
+import { complianceAPI } from '../services/api';
+
+interface SecurityEvent {
+  id: string;
+  event_type: string;
+  severity: string;
+  description: string;
+  ip_address?: string;
+  user_agent?: string;
+  occurred_at: string;
+  resolved?: string;
+  resolved_at?: string;
+}
+
+interface SecurityStatistics {
+  total_events: number;
+  by_type: Record<string, number>;
+  by_severity: {
+    low: number;
+    medium: number;
+    high: number;
+    critical: number;
+  };
+  failed_logins: number;
+  account_lockouts: number;
+  rate_limit_exceeded: number;
+}
+
+interface DataCollectionAnalysis {
+  data_categories: Record<string, any>;
+  data_retention: Record<string, string>;
+  data_sharing: Record<string, any>;
+  data_subject_rights: Record<string, string>;
+  security_measures: string[];
+  last_updated: string;
+}
+
+interface SARExport {
+  export_date: string;
+  user_id: string;
+  tenant_id: string;
+  data: Record<string, any>;
+}
+
+const Compliance: React.FC = () => {
+  const [activeTab, setActiveTab] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Security Dashboard State
+  const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
+  const [securityStats, setSecurityStats] = useState<SecurityStatistics | null>(null);
+  const [eventsLoading, setEventsLoading] = useState(false);
+
+  // GDPR State
+  const [dataAnalysis, setDataAnalysis] = useState<DataCollectionAnalysis | null>(null);
+  const [policyText, setPolicyText] = useState<string>('');
+  const [policyLoading, setPolicyLoading] = useState(false);
+  const [policyDialogOpen, setPolicyDialogOpen] = useState(false);
+  const [includeISO, setIncludeISO] = useState(false);
+  const [sarExport, setSarExport] = useState<SARExport | null>(null);
+  const [sarLoading, setSarLoading] = useState(false);
+  const [sarDialogOpen, setSarDialogOpen] = useState(false);
+  const [sarSelectDialogOpen, setSarSelectDialogOpen] = useState(false);
+  const [sarSubjects, setSarSubjects] = useState<any[]>([]);
+  const [sarSearchTerm, setSarSearchTerm] = useState('');
+  const [selectedSarSubject, setSelectedSarSubject] = useState<any>(null);
+  const [loadingSarSubjects, setLoadingSarSubjects] = useState(false);
+  const [generateDocument, setGenerateDocument] = useState(true);
+  const [sendingEmail, setSendingEmail] = useState(false);
+
+  // Load security events
+  const loadSecurityEvents = async () => {
+    setEventsLoading(true);
+    setError(null);
+    try {
+      const [eventsRes, statsRes] = await Promise.all([
+        complianceAPI.getSecurityEvents({ hours: 24, limit: 100 }),
+        complianceAPI.getSecurityStatistics({ hours: 24 }),
+      ]);
+      setSecurityEvents(Array.isArray(eventsRes?.data) ? eventsRes.data : []);
+      setSecurityStats(statsRes?.data || null);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to load security events');
+    } finally {
+      setEventsLoading(false);
+    }
+  };
+
+  // Load GDPR data analysis
+  const loadDataAnalysis = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await complianceAPI.getDataCollectionAnalysis();
+      setDataAnalysis(response?.data || null);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to load data analysis');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Generate GDPR policy
+  const generatePolicy = async () => {
+    setPolicyLoading(true);
+    setError(null);
+    try {
+      const response = await complianceAPI.generatePrivacyPolicy({ include_iso_sections: includeISO });
+      setPolicyText(response?.data?.policy || '');
+      setPolicyDialogOpen(true);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to generate policy');
+    } finally {
+      setPolicyLoading(false);
+    }
+  };
+
+  // Load SAR subjects (contacts and users)
+  const loadSARSubjects = async (search?: string) => {
+    setLoadingSarSubjects(true);
+    try {
+      const response = await complianceAPI.getSARSubjects(search);
+      setSarSubjects(response?.data?.subjects || []);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to load subjects');
+    } finally {
+      setLoadingSarSubjects(false);
+    }
+  };
+
+  // Open SAR subject selection dialog
+  const openSARSelectDialog = () => {
+    setSarSelectDialogOpen(true);
+    setSarSearchTerm('');
+    setSelectedSarSubject(null);
+    loadSARSubjects();
+  };
+
+  // Generate SAR export for selected subject
+  const generateSARExport = async () => {
+    if (!selectedSarSubject) {
+      setError('Please select a contact or user');
+      return;
+    }
+
+    setSarLoading(true);
+    setError(null);
+    try {
+      const contactId = selectedSarSubject.type === 'contact' ? selectedSarSubject.id : undefined;
+      const userId = selectedSarSubject.type === 'user' ? selectedSarSubject.id : undefined;
+      const response = await complianceAPI.getSARExport(contactId, userId, generateDocument);
+      setSarExport(response?.data || null);
+      setSarDialogOpen(true);
+      setSarSelectDialogOpen(false);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to generate SAR export');
+    } finally {
+      setSarLoading(false);
+    }
+  };
+
+  // Send SAR via email
+  const sendSAREmail = async (sarId: string, recipientEmail?: string) => {
+    setSendingEmail(true);
+    setError(null);
+    try {
+      await complianceAPI.sendSAREmail(sarId, recipientEmail);
+      setError(null);
+      // Show success message
+      alert('SAR document sent via email successfully');
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to send email');
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 0) {
+      loadSecurityEvents();
+    } else if (activeTab === 1) {
+      loadDataAnalysis();
+    }
+  }, [activeTab]);
+
+  const getSeverityColor = (severity: string) => {
+    switch (severity.toLowerCase()) {
+      case 'critical':
+        return 'error';
+      case 'high':
+        return 'warning';
+      case 'medium':
+        return 'info';
+      case 'low':
+        return 'success';
+      default:
+        return 'default';
+    }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+  };
+
+  const downloadJSON = (data: any, filename: string) => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
+      <Typography variant="h4" gutterBottom>
+        Compliance & Security
+      </Typography>
+
+      <Paper sx={{ mt: 3 }}>
+        <Tabs
+          value={activeTab}
+          onChange={(_, newValue) => setActiveTab(newValue)}
+          sx={{ borderBottom: 1, borderColor: 'divider' }}
+        >
+          <Tab icon={<SecurityIcon />} iconPosition="start" label="Security Dashboard" />
+          <Tab icon={<GavelIcon />} iconPosition="start" label="GDPR" />
+          <Tab icon={<VerifiedUserIcon />} iconPosition="start" label="ISO Standards" disabled />
+        </Tabs>
+
+        {/* Security Dashboard Tab */}
+        {activeTab === 0 && (
+          <Box sx={{ p: 3 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+              <Typography variant="h5">Security Events & Monitoring</Typography>
+              <Button
+                variant="outlined"
+                startIcon={<RefreshIcon />}
+                onClick={loadSecurityEvents}
+                disabled={eventsLoading}
+              >
+                Refresh
+              </Button>
+            </Box>
+
+            {error && (
+              <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+                {error}
+              </Alert>
+            )}
+
+            {eventsLoading ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+                <CircularProgress />
+              </Box>
+            ) : (
+              <>
+                {/* Statistics Cards */}
+                {securityStats && (
+                  <Grid container spacing={3} sx={{ mb: 3 }}>
+                    <Grid item xs={12} sm={6} md={3}>
+                      <Card>
+                        <CardContent>
+                          <Typography color="textSecondary" gutterBottom>
+                            Total Events (24h)
+                          </Typography>
+                          <Typography variant="h4">{securityStats.total_events}</Typography>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+                    <Grid item xs={12} sm={6} md={3}>
+                      <Card>
+                        <CardContent>
+                          <Typography color="textSecondary" gutterBottom>
+                            Failed Logins
+                          </Typography>
+                          <Typography variant="h4" color="error">
+                            {securityStats.failed_logins}
+                          </Typography>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+                    <Grid item xs={12} sm={6} md={3}>
+                      <Card>
+                        <CardContent>
+                          <Typography color="textSecondary" gutterBottom>
+                            Account Lockouts
+                          </Typography>
+                          <Typography variant="h4" color="warning.main">
+                            {securityStats.account_lockouts}
+                          </Typography>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+                    <Grid item xs={12} sm={6} md={3}>
+                      <Card>
+                        <CardContent>
+                          <Typography color="textSecondary" gutterBottom>
+                            Rate Limit Violations
+                          </Typography>
+                          <Typography variant="h4" color="info.main">
+                            {securityStats.rate_limit_exceeded}
+                          </Typography>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+                  </Grid>
+                )}
+
+                {/* Events Table */}
+                <TableContainer>
+                  <Table>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Time</TableCell>
+                        <TableCell>Type</TableCell>
+                        <TableCell>Severity</TableCell>
+                        <TableCell>Description</TableCell>
+                        <TableCell>IP Address</TableCell>
+                        <TableCell>Status</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {securityEvents.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} align="center">
+                            No security events in the last 24 hours
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        securityEvents.map((event) => (
+                          <TableRow key={event.id}>
+                            <TableCell>
+                              {new Date(event.occurred_at).toLocaleString()}
+                            </TableCell>
+                            <TableCell>{event.event_type.replace(/_/g, ' ')}</TableCell>
+                            <TableCell>
+                              <Chip
+                                label={event.severity}
+                                color={getSeverityColor(event.severity) as any}
+                                size="small"
+                              />
+                            </TableCell>
+                            <TableCell>{event.description}</TableCell>
+                            <TableCell>{event.ip_address || 'N/A'}</TableCell>
+                            <TableCell>
+                              {event.resolved ? (
+                                <Chip
+                                  icon={<CheckCircleIcon />}
+                                  label="Resolved"
+                                  color="success"
+                                  size="small"
+                                />
+                              ) : (
+                                <Chip
+                                  icon={<WarningIcon />}
+                                  label="Active"
+                                  color="warning"
+                                  size="small"
+                                />
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </>
+            )}
+          </Box>
+        )}
+
+        {/* GDPR Tab */}
+        {activeTab === 1 && (
+          <Box sx={{ p: 3 }}>
+            <Typography variant="h5" gutterBottom>
+              GDPR Compliance Tools
+            </Typography>
+
+            {error && (
+              <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+                {error}
+              </Alert>
+            )}
+
+            <Grid container spacing={3}>
+              {/* Data Collection Analysis */}
+              <Grid item xs={12} md={6}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>
+                      Data Collection Analysis
+                    </Typography>
+                    {loading ? (
+                      <CircularProgress />
+                    ) : dataAnalysis ? (
+                      <Box>
+                        <Typography variant="body2" color="textSecondary" paragraph>
+                          Last Updated: {new Date(dataAnalysis.last_updated).toLocaleString()}
+                        </Typography>
+                        <Box sx={{ mt: 2 }}>
+                          <Typography variant="subtitle2" gutterBottom>
+                            Data Categories:
+                          </Typography>
+                          {Object.keys(dataAnalysis.data_categories).map((category) => (
+                            <Chip
+                              key={category}
+                              label={category.replace(/_/g, ' ')}
+                              sx={{ mr: 1, mb: 1 }}
+                              size="small"
+                            />
+                          ))}
+                        </Box>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={loadDataAnalysis}
+                          sx={{ mt: 2 }}
+                        >
+                          Refresh Analysis
+                        </Button>
+                      </Box>
+                    ) : (
+                      <Button variant="outlined" onClick={loadDataAnalysis}>
+                        Load Data Analysis
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {/* GDPR Policy Generator */}
+              <Grid item xs={12} md={6}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>
+                      Privacy Policy Generator
+                    </Typography>
+                    <Typography variant="body2" color="textSecondary" paragraph>
+                      Generate a GDPR-compliant privacy policy based on your data collection practices.
+                    </Typography>
+                    <Box sx={{ mb: 2 }}>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={includeISO}
+                          onChange={(e) => setIncludeISO(e.target.checked)}
+                          style={{ marginRight: 8 }}
+                        />
+                        Include ISO 27001 & ISO 9001 references
+                      </label>
+                    </Box>
+                    <Button
+                      variant="contained"
+                      onClick={generatePolicy}
+                      disabled={policyLoading}
+                      fullWidth
+                    >
+                      {policyLoading ? <CircularProgress size={24} /> : 'Generate Policy'}
+                    </Button>
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {/* SAR Tool */}
+              <Grid item xs={12}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>
+                      Subject Access Request (SAR) Tool
+                    </Typography>
+                    <Typography variant="body2" color="textSecondary" paragraph>
+                      Generate a GDPR-compliant Subject Access Request (SAR) data export for a contact or user
+                      in your tenant's database. The export will include only AI-cleaned versions of communications
+                      and will redact internal notes and references to other people.
+                    </Typography>
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      startIcon={<DownloadIcon />}
+                      onClick={openSARSelectDialog}
+                      disabled={sarLoading}
+                    >
+                      {sarLoading ? 'Generating...' : 'Generate SAR Export'}
+                    </Button>
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
+          </Box>
+        )}
+
+        {/* ISO Standards Tab */}
+        {activeTab === 2 && (
+          <Box sx={{ p: 3 }}>
+            <Alert severity="info" sx={{ mb: 3 }}>
+              ISO 27001 (Information Security) and ISO 9001 (Quality Management) modules coming soon.
+            </Alert>
+            <Typography variant="h6" gutterBottom>
+              ISO 27001 - Information Security Management
+            </Typography>
+            <Typography variant="body2" color="textSecondary" paragraph>
+              This module will help you:
+            </Typography>
+            <ul>
+              <li>Document information security policies and procedures</li>
+              <li>Conduct risk assessments and manage security risks</li>
+              <li>Track security controls and compliance</li>
+              <li>Generate ISO 27001 audit reports</li>
+            </ul>
+
+            <Typography variant="h6" gutterBottom sx={{ mt: 4 }}>
+              ISO 9001 - Quality Management System
+            </Typography>
+            <Typography variant="body2" color="textSecondary" paragraph>
+              This module will help you:
+            </Typography>
+            <ul>
+              <li>Document quality management processes</li>
+              <li>Track quality objectives and metrics</li>
+              <li>Manage non-conformities and corrective actions</li>
+              <li>Generate ISO 9001 audit reports</li>
+            </ul>
+          </Box>
+        )}
+      </Paper>
+
+      {/* GDPR Policy Dialog */}
+      <Dialog
+        open={policyDialogOpen}
+        onClose={() => setPolicyDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          Generated GDPR Privacy Policy
+          <IconButton
+            onClick={() => copyToClipboard(policyText)}
+            sx={{ position: 'absolute', right: 8, top: 8 }}
+          >
+            <ContentCopyIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent>
+          <TextField
+            multiline
+            fullWidth
+            rows={20}
+            value={policyText}
+            variant="outlined"
+            InputProps={{
+              readOnly: true,
+            }}
+            sx={{ fontFamily: 'monospace', fontSize: '0.875rem' }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => downloadJSON({ policy: policyText }, 'gdpr-policy.json')}>
+            Download JSON
+          </Button>
+          <Button onClick={() => {
+            const blob = new Blob([policyText], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'gdpr-privacy-policy.txt';
+            a.click();
+            URL.revokeObjectURL(url);
+          }}>
+            Download Text
+          </Button>
+          <Button onClick={() => setPolicyDialogOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* SAR Export Dialog */}
+      <Dialog
+        open={sarDialogOpen}
+        onClose={() => setSarDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          Subject Access Request Export
+          {sarExport && (sarExport as any).document_info && (
+            <IconButton
+              onClick={() => sarExport && copyToClipboard(JSON.stringify(sarExport, null, 2))}
+              sx={{ position: 'absolute', right: 8, top: 8 }}
+            >
+              <ContentCopyIcon />
+            </IconButton>
+          )}
+        </DialogTitle>
+        <DialogContent>
+          {sarExport && (
+            <Box>
+              <Typography variant="body2" color="textSecondary" paragraph>
+                Export Date: {new Date((sarExport as any).date_of_response || (sarExport as any).export_date || new Date()).toLocaleString()}
+              </Typography>
+              
+              {/* Document Info */}
+              {sarExport && (sarExport as any).document_info && (
+                <Alert severity="success" sx={{ mb: 2 }}>
+                  <Typography variant="body2" gutterBottom>
+                    <strong>PDF Document Generated</strong>
+                  </Typography>
+                  <Typography variant="body2" color="textSecondary">
+                    Reference: {(sarExport as any).document_info.reference}
+                  </Typography>
+                  <Typography variant="body2" color="textSecondary">
+                    The document has been stored and is available for download or email delivery.
+                  </Typography>
+                </Alert>
+              )}
+              
+              {/* Download and Email Actions */}
+              {sarExport && (sarExport as any).document_info && (
+                <Box sx={{ mb: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    startIcon={<DownloadIcon />}
+                    onClick={async () => {
+                      if (!sarExport || !(sarExport as any).document_info) {
+                        setError('SAR document information not available');
+                        return;
+                      }
+                      const sarId = (sarExport as any).document_info.sar_id;
+                      const filename = (sarExport as any).document_info.filename || `SAR-${sarId}.pdf`;
+                      try {
+                        const response = await complianceAPI.downloadSARDocument(sarId);
+                        const blob = new Blob([response.data], { type: 'application/pdf' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = filename;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                      } catch (err: any) {
+                        setError(err.response?.data?.detail || 'Failed to download document');
+                      }
+                    }}
+                  >
+                    Download PDF
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="primary"
+                    startIcon={<DownloadIcon />}
+                    onClick={() => {
+                      if (!sarExport || !(sarExport as any).document_info) {
+                        setError('SAR document information not available');
+                        return;
+                      }
+                      const downloadUrl = (sarExport as any).document_info.download_url;
+                      if (downloadUrl) {
+                        window.open(downloadUrl, '_blank');
+                      } else {
+                        setError('Download URL not available');
+                      }
+                    }}
+                  >
+                    Open Download Link
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="secondary"
+                    startIcon={<EmailIcon />}
+                    onClick={async () => {
+                      if (!sarExport || !(sarExport as any).document_info) {
+                        setError('SAR document information not available');
+                        return;
+                      }
+                      const sarId = (sarExport as any).document_info.sar_id;
+                      const recipientEmail = (sarExport as any).data_subject?.email;
+                      await sendSAREmail(sarId, recipientEmail);
+                    }}
+                    disabled={sendingEmail}
+                  >
+                    {sendingEmail ? 'Sending...' : 'Send via Email'}
+                  </Button>
+                </Box>
+              )}
+              
+              {/* JSON Export (for reference) */}
+              <Typography variant="subtitle2" gutterBottom>
+                Export Data (JSON):
+              </Typography>
+              <TextField
+                multiline
+                fullWidth
+                rows={10}
+                value={sarExport ? JSON.stringify(sarExport, null, 2) : ''}
+                variant="outlined"
+                InputProps={{
+                  readOnly: true,
+                }}
+                sx={{ fontFamily: 'monospace', fontSize: '0.875rem' }}
+              />
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          {sarExport && (sarExport as any).document_info && (
+            <Button
+              onClick={() => sarExport && downloadJSON(sarExport, `sar-export-${Date.now()}.json`)}
+            >
+              Download JSON
+            </Button>
+          )}
+          <Button onClick={() => setSarDialogOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* SAR Subject Selection Dialog */}
+      <Dialog
+        open={sarSelectDialogOpen}
+        onClose={() => setSarSelectDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Select Person for SAR Export</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+            Select a contact or user from your tenant's database to generate a GDPR-compliant SAR export.
+            The export will include only AI-cleaned versions of communications and will redact internal notes
+            and references to other people.
+          </Typography>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={generateDocument}
+                onChange={(e) => setGenerateDocument(e.target.checked)}
+              />
+            }
+            label="Generate PDF document and store in MinIO (recommended for sending to requestor)"
+            sx={{ mb: 2, display: 'block' }}
+          />
+          <TextField
+            fullWidth
+            label="Search by name, email, or company"
+            variant="outlined"
+            value={sarSearchTerm}
+            onChange={(e) => {
+              setSarSearchTerm(e.target.value);
+              loadSARSubjects(e.target.value);
+            }}
+            sx={{ mb: 2 }}
+            autoFocus
+          />
+          {loadingSarSubjects ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+              <CircularProgress />
+            </Box>
+          ) : (
+            <List>
+              {sarSubjects.length === 0 ? (
+                <ListItem>
+                  <ListItemText primary="No contacts or users found" />
+                </ListItem>
+              ) : (
+                sarSubjects.map((subject) => (
+                  <React.Fragment key={subject.id}>
+                    <ListItemButton
+                      selected={selectedSarSubject?.id === subject.id}
+                      onClick={() => setSelectedSarSubject(subject)}
+                    >
+                      <ListItemText
+                        primary={subject.name}
+                        secondary={
+                          <Box component="span">
+                            {subject.email && (
+                              <Typography variant="caption" display="block" component="span">
+                                {subject.email}
+                              </Typography>
+                            )}
+                            {subject.company && (
+                              <Typography variant="caption" display="block" color="textSecondary" component="span">
+                                {subject.company}
+                              </Typography>
+                            )}
+                            <Chip
+                              label={subject.type === 'contact' ? 'Contact' : 'User'}
+                              size="small"
+                              sx={{ mt: 0.5 }}
+                              component="span"
+                            />
+                          </Box>
+                        }
+                        secondaryTypographyProps={{ component: 'div' }}
+                      />
+                    </ListItemButton>
+                    <Divider />
+                  </React.Fragment>
+                ))
+              )}
+            </List>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSarSelectDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={generateSARExport}
+            disabled={!selectedSarSubject || sarLoading}
+            variant="contained"
+            startIcon={sarLoading ? <CircularProgress size={20} /> : <DownloadIcon />}
+          >
+            {sarLoading ? 'Generating...' : 'Generate SAR Export'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Container>
+  );
+};
+
+export default Compliance;

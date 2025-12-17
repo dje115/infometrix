@@ -1,0 +1,5303 @@
+#!/usr/bin/env python3
+"""
+Helpdesk API Endpoints
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Body
+from fastapi.responses import Response
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, and_, func
+from app.services.sla_tracking_service import SLATrackingService
+from typing import List, Optional, Dict, Any
+from pydantic import BaseModel, EmailStr, Field
+from datetime import datetime, timezone, date
+
+from app.core.dependencies import get_current_user, get_current_tenant, check_permission
+from app.core.database import get_async_db, SessionLocal
+from app.models.tenant import User, Tenant
+from app.models.helpdesk import Ticket, TicketStatus, TicketPriority, TicketType
+from app.services.helpdesk_service import HelpdeskService
+from app.services.storage_service import StorageService
+
+router = APIRouter(prefix="/helpdesk", tags=["Helpdesk"])
+
+
+class TicketCreate(BaseModel):
+    subject: str
+    description: str
+    customer_id: Optional[str] = None
+    contact_id: Optional[str] = None
+    ticket_type: TicketType = TicketType.SUPPORT
+    priority: TicketPriority = TicketPriority.MEDIUM
+    related_quote_id: Optional[str] = None
+    related_contract_id: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+
+class TicketCommentCreate(BaseModel):
+    comment: str
+    is_internal: bool = False
+    status_change: Optional[str] = None
+
+
+class CustomerTicketCreate(BaseModel):
+    subject: str
+    description: str
+    contact_name: str
+    contact_email: EmailStr
+    ticket_type: TicketType = TicketType.SUPPORT
+    priority: TicketPriority = TicketPriority.MEDIUM
+
+
+class KnowledgeBaseArticleCreate(BaseModel):
+    title: str
+    content: str
+    summary: Optional[str] = None
+    category: Optional[str] = None
+    tags: Optional[List[str]] = None
+    is_published: bool = False
+    is_featured: bool = False
+
+
+class TicketTemplateCreate(BaseModel):
+    name: str
+    category: Optional[str] = None
+    subject_template: Optional[str] = None
+    description_template: Optional[str] = None
+    npa_template: Optional[str] = None
+    tags: Optional[List[str]] = None
+    is_active: bool = True
+
+
+class TicketTemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    category: Optional[str] = None
+    subject_template: Optional[str] = None
+    description_template: Optional[str] = None
+    npa_template: Optional[str] = None
+    tags: Optional[List[str]] = None
+    is_active: Optional[bool] = None
+
+
+class QuickReplyTemplateCreate(BaseModel):
+    name: str
+    content: str
+    category: Optional[str] = None
+    is_shared: bool = False
+
+
+class QuickReplyTemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    content: Optional[str] = None
+    category: Optional[str] = None
+    is_shared: Optional[bool] = None
+
+
+class TicketMacroCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    actions: List[Dict[str, Any]]  # Array of action objects
+    is_shared: bool = False
+
+
+class TicketMacroUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    actions: Optional[List[Dict[str, Any]]] = None
+    is_shared: Optional[bool] = None
+
+
+class TicketTimeEntryCreate(BaseModel):
+    description: Optional[str] = None
+    hours: float
+    billable: bool = False
+    activity_type: Optional[str] = None
+    started_at: Optional[str] = None
+    ended_at: Optional[str] = None
+
+
+class TicketTimeEntryUpdate(BaseModel):
+    description: Optional[str] = None
+    hours: Optional[float] = None
+    billable: Optional[bool] = None
+    activity_type: Optional[str] = None
+    started_at: Optional[str] = None
+    ended_at: Optional[str] = None
+
+
+@router.post("/tickets", status_code=status.HTTP_201_CREATED)
+async def create_ticket(
+    ticket_data: TicketCreate,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Create a new support ticket
+    
+    PERFORMANCE: Uses AsyncSession to prevent blocking the event loop.
+    """
+    try:
+        # HelpdeskService currently expects sync session - use sync wrapper
+        # TODO: Refactor HelpdeskService to support async sessions
+        from app.core.database import SessionLocal
+        sync_db = SessionLocal()
+        try:
+            service = HelpdeskService(sync_db, current_user.tenant_id)
+            ticket = await service.create_ticket(
+                subject=ticket_data.subject,
+                description=ticket_data.description,
+                customer_id=ticket_data.customer_id,
+                contact_id=ticket_data.contact_id,
+                ticket_type=ticket_data.ticket_type,
+                priority=ticket_data.priority,
+                created_by_user_id=current_user.id,
+                related_quote_id=ticket_data.related_quote_id,
+                related_contract_id=ticket_data.related_contract_id,
+                tags=ticket_data.tags
+            )
+        finally:
+            sync_db.close()
+        
+        # Auto-apply SLA to the ticket
+        try:
+            from app.services.sla_tracking_service import SLATrackingService
+            tracking_service = SLATrackingService(db, current_tenant.id)
+            
+            # Get the ticket from async db
+            from app.models.helpdesk import Ticket
+            ticket_id = ticket.get('id') or ticket.id if hasattr(ticket, 'id') else None
+            if ticket_id:
+                ticket_stmt = select(Ticket).where(Ticket.id == ticket_id)
+                ticket_result = await db.execute(ticket_stmt)
+                ticket_obj = ticket_result.scalar_one_or_none()
+                
+                if ticket_obj:
+                    # Get contract if linked
+                    contract = None
+                    if ticket_obj.related_contract_id:
+                        from app.models.support_contract import SupportContract
+                        contract_stmt = select(SupportContract).where(
+                            SupportContract.id == ticket_obj.related_contract_id
+                        )
+                        contract_result = await db.execute(contract_stmt)
+                        contract = contract_result.scalar_one_or_none()
+                    
+                    # Apply SLA
+                    await tracking_service.apply_sla_to_ticket(ticket_obj)
+                    
+                    # Check initial compliance
+                    await tracking_service.check_ticket_sla_compliance(ticket_obj)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to apply SLA to ticket: {e}")
+        
+        return ticket
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error creating ticket: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating ticket: {str(e)}"
+        )
+
+
+@router.post("/tickets/customer", status_code=status.HTTP_201_CREATED)
+async def create_customer_ticket(
+    ticket_data: CustomerTicketCreate,
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Create a ticket from customer portal (no auth required)
+    
+    PERFORMANCE: Uses AsyncSession to prevent blocking the event loop.
+    """
+    try:
+        # Get tenant from customer email domain or default tenant
+        # For now, use default tenant
+        from app.models.tenant import Tenant
+        from app.models.crm import Customer
+        from sqlalchemy import select
+        
+        tenant_stmt = select(Tenant).where(Tenant.code == "ccs")
+        tenant_result = await db.execute(tenant_stmt)
+        tenant = tenant_result.scalar_one_or_none()
+        if not tenant:
+            raise HTTPException(status_code=404, detail="Tenant not found")
+        
+        # Find or create customer by email (use async query)
+        customer_stmt = select(Customer).where(
+            and_(
+                Customer.tenant_id == tenant.id,
+                Customer.main_email == ticket_data.contact_email
+            )
+        )
+        customer_result = await db.execute(customer_stmt)
+        customer = customer_result.scalars().first()
+        
+        customer_id = customer.id if customer else None
+        
+        # HelpdeskService currently expects sync session - use sync wrapper
+        from app.core.database import SessionLocal
+        sync_db = SessionLocal()
+        try:
+            service = HelpdeskService(sync_db, tenant.id)
+            
+            ticket = await service.create_ticket(
+                subject=ticket_data.subject,
+                description=ticket_data.description,
+                customer_id=customer_id,
+                ticket_type=ticket_data.ticket_type,
+                priority=ticket_data.priority,
+                tags=None
+            )
+            
+            # Add initial comment from customer
+            await service.add_comment(
+                ticket_id=ticket.id,
+                comment=ticket_data.description,
+                author_id=None,
+                author_name=ticket_data.contact_name,
+                author_email=ticket_data.contact_email,
+                is_internal=False
+            )
+        finally:
+            sync_db.close()
+        
+        return ticket
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error creating customer ticket: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating customer ticket: {str(e)}"
+        )
+
+
+@router.get("/tickets")
+async def list_tickets(
+    ticket_status: Optional[TicketStatus] = Query(None, alias="status"),
+    priority: Optional[TicketPriority] = Query(None),
+    assigned_to_id: Optional[str] = Query(None),
+    customer_id: Optional[str] = Query(None),
+    ticket_type: Optional[TicketType] = Query(None),
+    search: Optional[str] = Query(None, description="Search in subject, description, ticket number"),
+    tags: Optional[str] = Query(None, description="Comma-separated list of tags"),
+    created_from: Optional[str] = Query(None, description="Created from date (ISO format)"),
+    created_to: Optional[str] = Query(None, description="Created to date (ISO format)"),
+    updated_from: Optional[str] = Query(None, description="Updated from date (ISO format)"),
+    updated_to: Optional[str] = Query(None, description="Updated to date (ISO format)"),
+    has_attachments: Optional[bool] = Query(None, description="Filter by tickets with/without attachments"),
+    sla_breached: Optional[bool] = Query(None, description="Filter by SLA breach status"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    sort_by: Optional[str] = Query("created_at", description="Sort field: created_at, updated_at, priority, status"),
+    sort_order: Optional[str] = Query("desc", description="Sort order: asc, desc"),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    List tickets with advanced filters and search
+    
+    PERFORMANCE: Uses AsyncSession to prevent blocking the event loop.
+    """
+    try:
+        from app.core.database import SessionLocal
+        from app.models.helpdesk import Ticket, TicketAttachment
+        from sqlalchemy import or_, and_, func, desc, asc
+        from datetime import datetime
+        
+        sync_db = SessionLocal()
+        try:
+            # Build query
+            query = sync_db.query(Ticket).filter(Ticket.tenant_id == current_tenant.id)
+            
+            # Status filter
+            if ticket_status:
+                query = query.filter(Ticket.status == ticket_status)
+            
+            # Priority filter
+            if priority:
+                query = query.filter(Ticket.priority == priority)
+            
+            # Assigned to filter
+            if assigned_to_id:
+                if assigned_to_id == "me":
+                    query = query.filter(Ticket.assigned_to_id == current_user.id)
+                elif assigned_to_id == "unassigned":
+                    query = query.filter(Ticket.assigned_to_id == None)
+                else:
+                    query = query.filter(Ticket.assigned_to_id == assigned_to_id)
+            
+            # Customer filter
+            if customer_id:
+                query = query.filter(Ticket.customer_id == customer_id)
+            
+            # Ticket type filter
+            if ticket_type:
+                query = query.filter(Ticket.ticket_type == ticket_type)
+            
+            # Search filter (subject, description, ticket_number)
+            if search:
+                search_term = f"%{search}%"
+                query = query.filter(
+                    or_(
+                        Ticket.subject.ilike(search_term),
+                        Ticket.description.ilike(search_term),
+                        Ticket.ticket_number.ilike(search_term)
+                    )
+                )
+            
+            # Tags filter
+            if tags:
+                tag_list = [tag.strip() for tag in tags.split(',')]
+                # Filter tickets that have any of the specified tags
+                for tag in tag_list:
+                    query = query.filter(Ticket.tags.contains([tag]))
+            
+            # Date range filters
+            if created_from:
+                try:
+                    from_date = datetime.fromisoformat(created_from.replace('Z', '+00:00'))
+                    query = query.filter(Ticket.created_at >= from_date)
+                except:
+                    pass
+            
+            if created_to:
+                try:
+                    to_date = datetime.fromisoformat(created_to.replace('Z', '+00:00'))
+                    query = query.filter(Ticket.created_at <= to_date)
+                except:
+                    pass
+            
+            if updated_from:
+                try:
+                    from_date = datetime.fromisoformat(updated_from.replace('Z', '+00:00'))
+                    query = query.filter(Ticket.updated_at >= from_date)
+                except:
+                    pass
+            
+            if updated_to:
+                try:
+                    to_date = datetime.fromisoformat(updated_to.replace('Z', '+00:00'))
+                    query = query.filter(Ticket.updated_at <= to_date)
+                except:
+                    pass
+            
+            # Attachments filter
+            if has_attachments is not None:
+                if has_attachments:
+                    # Tickets with attachments
+                    ticket_ids_with_attachments = sync_db.query(TicketAttachment.ticket_id).distinct().subquery()
+                    query = query.filter(Ticket.id.in_(sync_db.query(ticket_ids_with_attachments.c.ticket_id)))
+                else:
+                    # Tickets without attachments
+                    ticket_ids_with_attachments = sync_db.query(TicketAttachment.ticket_id).distinct().subquery()
+                    query = query.filter(~Ticket.id.in_(sync_db.query(ticket_ids_with_attachments.c.ticket_id)))
+            
+            # SLA breach filter
+            if sla_breached is not None:
+                if sla_breached:
+                    query = query.filter(
+                        or_(
+                            Ticket.sla_first_response_breached == True,
+                            Ticket.sla_resolution_breached == True
+                        )
+                    )
+                else:
+                    query = query.filter(
+                        and_(
+                            Ticket.sla_first_response_breached != True,
+                            Ticket.sla_resolution_breached != True
+                        )
+                    )
+            
+            # Sorting
+            if sort_by == "updated_at":
+                order_by = desc(Ticket.updated_at) if sort_order == "desc" else asc(Ticket.updated_at)
+            elif sort_by == "priority":
+                order_by = desc(Ticket.priority) if sort_order == "desc" else asc(Ticket.priority)
+            elif sort_by == "status":
+                order_by = desc(Ticket.status) if sort_order == "desc" else asc(Ticket.status)
+            else:  # created_at (default)
+                order_by = desc(Ticket.created_at) if sort_order == "desc" else asc(Ticket.created_at)
+            
+            query = query.order_by(order_by)
+            
+            # Get total count before pagination
+            total_count = query.count()
+            
+            # Apply pagination
+            tickets = query.offset(offset).limit(limit).all()
+            
+        finally:
+            sync_db.close()
+        
+        return {
+            "tickets": tickets,
+            "count": len(tickets),
+            "total": total_count,
+            "offset": offset,
+            "limit": limit
+        }
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error listing tickets: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error listing tickets: {str(e)}"
+        )
+
+
+@router.get("/tickets/stats")
+async def get_ticket_stats(
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Get ticket statistics
+    
+    PERFORMANCE: Uses AsyncSession to prevent blocking the event loop.
+    """
+    try:
+        # HelpdeskService currently expects sync session - use sync wrapper
+        from app.core.database import SessionLocal
+        sync_db = SessionLocal()
+        try:
+            service = HelpdeskService(sync_db, current_user.tenant_id)
+            stats = service.get_ticket_stats()
+        finally:
+            sync_db.close()
+        return stats
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting stats: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting stats: {str(e)}"
+        )
+
+
+@router.get("/tickets/agent-dashboard")
+async def get_agent_dashboard(
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Get agent dashboard data including assigned tickets, workload, SLA status, etc.
+    
+    PERFORMANCE: Uses AsyncSession to prevent blocking the event loop.
+    """
+    try:
+        from app.core.database import SessionLocal
+        from app.models.helpdesk import Ticket, TicketStatus, TicketPriority
+        from sqlalchemy import func, and_, or_
+        from datetime import datetime, timezone, timedelta
+        
+        sync_db = SessionLocal()
+        try:
+            # My Assigned Tickets
+            my_tickets = sync_db.query(Ticket).filter(
+                Ticket.tenant_id == current_tenant.id,
+                Ticket.assigned_to_id == current_user.id,
+                Ticket.status.in_([TicketStatus.OPEN, TicketStatus.IN_PROGRESS])
+            ).order_by(Ticket.priority.desc(), Ticket.created_at.desc()).limit(10).all()
+            
+            # Ticket counts by status
+            ticket_counts = sync_db.query(
+                Ticket.status,
+                func.count(Ticket.id).label('count')
+            ).filter(
+                Ticket.tenant_id == current_tenant.id,
+                Ticket.assigned_to_id == current_user.id
+            ).group_by(Ticket.status).all()
+            
+            status_counts = {status.value: count for status, count in ticket_counts}
+            
+            # Priority breakdown
+            priority_counts = sync_db.query(
+                Ticket.priority,
+                func.count(Ticket.id).label('count')
+            ).filter(
+                Ticket.tenant_id == current_tenant.id,
+                Ticket.assigned_to_id == current_user.id,
+                Ticket.status.in_([TicketStatus.OPEN, TicketStatus.IN_PROGRESS])
+            ).group_by(Ticket.priority).all()
+            
+            priority_breakdown = {priority.value: count for priority, count in priority_counts}
+            
+            # SLA Status
+            sla_breached = sync_db.query(func.count(Ticket.id)).filter(
+                Ticket.tenant_id == current_tenant.id,
+                Ticket.assigned_to_id == current_user.id,
+                Ticket.status.in_([TicketStatus.OPEN, TicketStatus.IN_PROGRESS]),
+                or_(
+                    Ticket.sla_first_response_breached == True,
+                    Ticket.sla_resolution_breached == True
+                )
+            ).scalar() or 0
+            
+            sla_at_risk = sync_db.query(func.count(Ticket.id)).filter(
+                Ticket.tenant_id == current_tenant.id,
+                Ticket.assigned_to_id == current_user.id,
+                Ticket.status.in_([TicketStatus.OPEN, TicketStatus.IN_PROGRESS]),
+                Ticket.sla_policy_id != None
+            ).scalar() or 0
+            
+            # Recent activity (tickets updated in last 24 hours)
+            yesterday = datetime.now(timezone.utc) - timedelta(days=1)
+            recent_activity = sync_db.query(Ticket).filter(
+                Ticket.tenant_id == current_tenant.id,
+                Ticket.assigned_to_id == current_user.id,
+                Ticket.updated_at >= yesterday
+            ).order_by(Ticket.updated_at.desc()).limit(5).all()
+            
+            # Overdue tickets (past due date if exists)
+            overdue_tickets = sync_db.query(Ticket).filter(
+                Ticket.tenant_id == current_tenant.id,
+                Ticket.assigned_to_id == current_user.id,
+                Ticket.status.in_([TicketStatus.OPEN, TicketStatus.IN_PROGRESS]),
+                or_(
+                    Ticket.sla_first_response_breached == True,
+                    Ticket.sla_resolution_breached == True
+                )
+            ).order_by(Ticket.priority.desc()).limit(5).all()
+            
+            # Time tracking summary
+            from app.models.helpdesk import TicketTimeEntry
+            today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            today_time = sync_db.query(func.sum(func.cast(TicketTimeEntry.hours, func.Float))).filter(
+                TicketTimeEntry.tenant_id == current_tenant.id,
+                TicketTimeEntry.user_id == current_user.id,
+                TicketTimeEntry.created_at >= today
+            ).scalar() or 0.0
+            
+            this_week_start = today - timedelta(days=today.weekday())
+            week_time = sync_db.query(func.sum(func.cast(TicketTimeEntry.hours, func.Float))).filter(
+                TicketTimeEntry.tenant_id == current_tenant.id,
+                TicketTimeEntry.user_id == current_user.id,
+                TicketTimeEntry.created_at >= this_week_start
+            ).scalar() or 0.0
+            
+        finally:
+            sync_db.close()
+        
+        return {
+            "my_tickets": my_tickets,
+            "status_counts": status_counts,
+            "priority_breakdown": priority_breakdown,
+            "sla": {
+                "breached": sla_breached,
+                "at_risk": sla_at_risk
+            },
+            "recent_activity": recent_activity,
+            "overdue_tickets": overdue_tickets,
+            "time_tracking": {
+                "today_hours": float(today_time),
+                "week_hours": float(week_time)
+            }
+        }
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting agent dashboard: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting agent dashboard: {str(e)}"
+        )
+
+
+# ============================================================================
+# TICKET PATTERN DETECTION
+# ============================================================================
+
+@router.post("/tickets/patterns/customer/{customer_id}")
+async def detect_customer_patterns(
+    customer_id: str,
+    limit: int = Body(50, embed=True),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Detect patterns in tickets for a specific customer using AI
+    This can be run manually to identify recurring issues
+    """
+    try:
+        from app.core.database import SessionLocal
+        from app.services.ticket_pattern_detection_service import TicketPatternDetectionService
+        
+        sync_db = SessionLocal()
+        try:
+            service = TicketPatternDetectionService(sync_db, current_tenant.id)
+            result = await service.detect_customer_patterns(customer_id, limit=limit)
+        finally:
+            sync_db.close()
+        
+        return result
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error detecting customer patterns: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error detecting patterns: {str(e)}"
+        )
+
+
+@router.post("/tickets/patterns/cross-customer")
+async def detect_cross_customer_patterns(
+    limit_per_customer: int = Body(20, embed=True),
+    min_tickets_per_pattern: int = Body(3, embed=True),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Detect patterns across all customers to identify widespread issues
+    This can be run manually to find systemic problems
+    """
+    try:
+        from app.core.database import SessionLocal
+        from app.services.ticket_pattern_detection_service import TicketPatternDetectionService
+        
+        sync_db = SessionLocal()
+        try:
+            service = TicketPatternDetectionService(sync_db, current_tenant.id)
+            result = await service.detect_cross_customer_patterns(
+                limit_per_customer=limit_per_customer,
+                min_tickets_per_pattern=min_tickets_per_pattern
+            )
+        finally:
+            sync_db.close()
+        
+        return result
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error detecting cross-customer patterns: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error detecting patterns: {str(e)}"
+        )
+
+
+@router.get("/tickets/{ticket_id}")
+async def get_ticket(
+    ticket_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Get ticket details with comments and history
+    
+    PERFORMANCE: Uses AsyncSession to prevent blocking the event loop.
+    """
+    try:
+        from app.models.helpdesk import Ticket, TicketComment, TicketHistory
+        from sqlalchemy.orm import joinedload
+        from sqlalchemy import select
+        
+        # Use async session with select
+        # Note: When using joinedload with collections, we need unique() to avoid duplicate rows
+        stmt = select(Ticket).options(
+            joinedload(Ticket.comments),
+            joinedload(Ticket.history),
+            joinedload(Ticket.assigned_to)
+        ).where(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_user.tenant_id
+        )
+        result = await db.execute(stmt)
+        ticket = result.unique().scalar_one_or_none()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        # Get assigned user name if available
+        assigned_to_name = None
+        if ticket.assigned_to_id and ticket.assigned_to:
+            assigned_to_name = ticket.assigned_to.name if hasattr(ticket.assigned_to, 'name') else ticket.assigned_to.email if hasattr(ticket.assigned_to, 'email') else None
+        
+        # Get customer name if available
+        customer_name = None
+        if ticket.customer_id:
+            from app.models.crm import Customer
+            customer_stmt = select(Customer).where(Customer.id == ticket.customer_id)
+            customer_result = await db.execute(customer_stmt)
+            customer = customer_result.scalar_one_or_none()
+            if customer:
+                customer_name = customer.company_name
+        
+        # Parse AI suggestions if it's a string (JSON)
+        ai_suggestions = ticket.ai_suggestions
+        if isinstance(ai_suggestions, str):
+            try:
+                import json
+                ai_suggestions = json.loads(ai_suggestions)
+            except:
+                ai_suggestions = None
+        
+        # Convert to dict and include relationships
+        ticket_dict = {
+            "id": ticket.id,
+            "ticket_number": ticket.ticket_number,
+            "subject": ticket.subject,
+            "description": ticket.description,
+            "original_description": ticket.original_description,
+            "improved_description": ticket.improved_description,
+            "cleaned_description": getattr(ticket, 'cleaned_description', None),
+            "description_ai_cleanup_status": getattr(ticket, 'description_ai_cleanup_status', None),
+            "description_ai_cleanup_task_id": getattr(ticket, 'description_ai_cleanup_task_id', None),
+            "ai_suggestions": ai_suggestions,
+            "ai_analysis_date": ticket.ai_analysis_date.isoformat() if ticket.ai_analysis_date else None,
+            "status": ticket.status.value if ticket.status else None,
+            "priority": ticket.priority.value if ticket.priority else None,
+            "ticket_type": ticket.ticket_type.value if ticket.ticket_type else None,
+            "customer_id": ticket.customer_id,
+            "customer_name": customer_name,
+            "contact_id": ticket.contact_id,
+            "assigned_to_id": ticket.assigned_to_id,
+            "assigned_to_name": assigned_to_name,
+            "created_by_user_id": ticket.created_by_user_id,
+            "created_at": ticket.created_at.isoformat() if ticket.created_at else None,
+            "updated_at": ticket.updated_at.isoformat() if ticket.updated_at else None,
+            "resolved_at": ticket.resolved_at.isoformat() if ticket.resolved_at else None,
+            "closed_at": ticket.closed_at.isoformat() if ticket.closed_at else None,
+            "first_response_at": ticket.first_response_at.isoformat() if ticket.first_response_at else None,
+            "comments": [
+                {
+                    "id": comment.id,
+                    "comment": comment.comment,
+                    "author_id": comment.author_id,
+                    "author_name": comment.author_name,
+                    "author_email": comment.author_email,
+                    "is_internal": comment.is_internal,
+                    "created_at": comment.created_at.isoformat() if comment.created_at else None
+                }
+                for comment in ticket.comments
+            ] if ticket.comments else [],
+            "history": [
+                {
+                    "id": hist.id,
+                    "field_name": hist.field_name,
+                    "old_value": hist.old_value,
+                    "new_value": hist.new_value,
+                    "created_at": hist.created_at.isoformat() if hist.created_at else None
+                }
+                for hist in ticket.history
+            ] if ticket.history else []
+        }
+        
+        return ticket_dict
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting ticket: {str(e)}"
+        )
+
+
+@router.put("/tickets/{ticket_id}")
+async def update_ticket(
+    ticket_id: str,
+    ticket_update: Dict[str, Any] = Body(...),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Update a ticket (description, status, priority, etc.)
+    Automatically triggers AI cleanup for description if original_description is updated.
+    """
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import Ticket
+    
+    sync_db = SessionLocal()
+    try:
+        ticket = sync_db.query(Ticket).filter(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        # Update fields
+        if "original_description" in ticket_update:
+            ticket.original_description = ticket_update["original_description"]
+            # If description is also provided, update it
+            if "description" not in ticket_update:
+                ticket.description = ticket_update["original_description"]
+        
+        if "cleaned_description" in ticket_update:
+            ticket.cleaned_description = ticket_update["cleaned_description"]
+            # Update main description to cleaned version
+            ticket.description = ticket_update["cleaned_description"]
+        
+        if "description" in ticket_update:
+            ticket.description = ticket_update["description"]
+            # If original_description not set, use description as original
+            if not ticket.original_description:
+                ticket.original_description = ticket_update["description"]
+        
+        # Trigger AI cleanup if requested
+        if ticket_update.get("trigger_description_cleanup", False) and ticket.original_description:
+            try:
+                from app.tasks.ticket_description_tasks import cleanup_ticket_description_task
+                ticket.description_ai_cleanup_status = "pending"
+                task = cleanup_ticket_description_task.delay(
+                    ticket_id=ticket.id,
+                    tenant_id=current_tenant.id,
+                    original_description=ticket.original_description
+                )
+                ticket.description_ai_cleanup_task_id = task.id
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Failed to queue description cleanup: {e}")
+        
+        # Update other fields
+        if "subject" in ticket_update:
+            ticket.subject = ticket_update["subject"]
+        if "status" in ticket_update:
+            from app.models.helpdesk import TicketStatus
+            ticket.status = TicketStatus[ticket_update["status"].upper()]
+        if "priority" in ticket_update:
+            from app.models.helpdesk import TicketPriority
+            ticket.priority = TicketPriority[ticket_update["priority"].upper()]
+        if "ticket_type" in ticket_update:
+            from app.models.helpdesk import TicketType
+            ticket.ticket_type = TicketType[ticket_update["ticket_type"].upper()]
+        
+        sync_db.commit()
+        sync_db.refresh(ticket)
+        
+        return {
+            "id": ticket.id,
+            "ticket_number": ticket.ticket_number,
+            "subject": ticket.subject,
+            "description": ticket.description,
+            "original_description": ticket.original_description,
+            "cleaned_description": ticket.cleaned_description,
+            "description_ai_cleanup_status": ticket.description_ai_cleanup_status,
+            "status": ticket.status.value if ticket.status else None,
+            "priority": ticket.priority.value if ticket.priority else None
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error updating ticket: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating ticket: {str(e)}"
+        )
+    finally:
+        sync_db.close()
+
+
+@router.post("/tickets/{ticket_id}/comments")
+async def add_comment(
+    ticket_id: str,
+    comment_data: TicketCommentCreate,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Add a comment to a ticket and trigger AI analysis
+    
+    PERFORMANCE: Uses AsyncSession to prevent blocking the event loop.
+    """
+    try:
+        # HelpdeskService currently expects sync session - use sync wrapper
+        from app.core.database import SessionLocal
+        sync_db = SessionLocal()
+        try:
+            service = HelpdeskService(sync_db, current_user.tenant_id)
+            comment = await service.add_comment(
+                ticket_id=ticket_id,
+                comment=comment_data.comment,
+                author_id=current_user.id,
+                is_internal=comment_data.is_internal,
+                status_change=comment_data.status_change
+            )
+        finally:
+            sync_db.close()
+        
+        # Check SLA compliance after comment/status change
+        try:
+            from app.services.sla_tracking_service import SLATrackingService
+            tracking_service = SLATrackingService(db, current_tenant.id)
+            
+            from app.models.helpdesk import Ticket
+            ticket_stmt = select(Ticket).where(Ticket.id == ticket_id)
+            ticket_result = await db.execute(ticket_stmt)
+            ticket_obj = ticket_result.scalar_one_or_none()
+            
+            if ticket_obj:
+                await tracking_service.check_ticket_sla_compliance(ticket_obj)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to check SLA compliance for ticket {ticket_id}: {e}")
+        
+        return comment
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error adding comment: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error adding comment: {str(e)}"
+        )
+
+
+@router.post("/tickets/{ticket_id}/analyze")
+async def analyze_ticket(
+    ticket_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Manually trigger AI analysis for a ticket (runs as background task)
+    
+    This endpoint queues the analysis as a Celery background task to avoid timeouts.
+    The analysis will complete asynchronously and update the ticket when done.
+    """
+    try:
+        from app.core.database import SessionLocal
+        from app.models.helpdesk import Ticket
+        from app.tasks.ticket_ai_tasks import analyze_ticket_task
+        
+        sync_db = SessionLocal()
+        try:
+            # Verify ticket exists
+            ticket = sync_db.query(Ticket).filter(
+                Ticket.id == ticket_id,
+                Ticket.tenant_id == current_user.tenant_id
+            ).first()
+            
+            if not ticket:
+                raise HTTPException(status_code=404, detail="Ticket not found")
+            
+            # Queue Celery task for background processing
+            task = analyze_ticket_task.delay(
+                ticket_id=ticket_id,
+                tenant_id=current_user.tenant_id
+            )
+            
+            return {
+                "success": True,
+                "message": "AI analysis queued for background processing",
+                "task_id": task.id,
+                "status": "processing"
+            }
+        finally:
+            sync_db.close()
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error queueing ticket analysis: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error queueing ticket analysis: {str(e)}"
+        )
+
+
+@router.post("/tickets/{ticket_id}/assign")
+async def assign_ticket(
+    ticket_id: str,
+    assigned_to_id: str,
+    current_user: User = Depends(check_permission("ticket:assign")),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Assign a ticket to a user
+    
+    PERFORMANCE: Uses AsyncSession to prevent blocking the event loop.
+    """
+    try:
+        # HelpdeskService currently expects sync session - use sync wrapper
+        from app.core.database import SessionLocal
+        sync_db = SessionLocal()
+        try:
+            service = HelpdeskService(sync_db, current_user.tenant_id)
+            ticket = service.assign_ticket(
+                ticket_id=ticket_id,
+                assigned_to_id=assigned_to_id,
+                assigned_by_id=current_user.id
+            )
+        finally:
+            sync_db.close()
+        return ticket
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error assigning ticket: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error assigning ticket: {str(e)}"
+        )
+
+
+@router.put("/tickets/{ticket_id}/priority")
+async def update_priority(
+    ticket_id: str,
+    priority: TicketPriority,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Update ticket priority
+    
+    PERFORMANCE: Uses AsyncSession to prevent blocking the event loop.
+    """
+    try:
+        # HelpdeskService currently expects sync session - use sync wrapper
+        from app.core.database import SessionLocal
+        sync_db = SessionLocal()
+        try:
+            service = HelpdeskService(sync_db, current_user.tenant_id)
+            ticket = service.update_priority(
+                ticket_id=ticket_id,
+                priority=priority,
+                changed_by_id=current_user.id
+            )
+        finally:
+            sync_db.close()
+        return ticket
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error updating priority: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating priority: {str(e)}"
+        )
+
+
+@router.get("/knowledge-base/search")
+async def search_knowledge_base(
+    q: str = Query(..., min_length=1),
+    category: Optional[str] = Query(None),
+    limit: int = Query(10, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Search knowledge base using AI-powered semantic search
+    
+    PERFORMANCE: Uses AsyncSession to prevent blocking the event loop.
+    """
+    try:
+        # HelpdeskService currently expects sync session - use sync wrapper
+        from app.core.database import SessionLocal
+        sync_db = SessionLocal()
+        try:
+            service = HelpdeskService(sync_db, current_user.tenant_id)
+            results = await service.search_knowledge_base(
+                query=q,
+                category=category,
+                limit=limit
+            )
+        finally:
+            sync_db.close()
+        return {"results": results, "query": q}
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error searching knowledge base: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error searching knowledge base: {str(e)}"
+        )
+
+
+@router.post("/knowledge-base/articles", status_code=status.HTTP_201_CREATED)
+async def create_knowledge_base_article(
+    article_data: KnowledgeBaseArticleCreate,
+    current_user: User = Depends(check_permission("kb:create")),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Create a knowledge base article
+    
+    PERFORMANCE: Uses AsyncSession to prevent blocking the event loop.
+    """
+    try:
+        # HelpdeskService currently expects sync session - use sync wrapper
+        from app.core.database import SessionLocal
+        sync_db = SessionLocal()
+        try:
+            service = HelpdeskService(sync_db, current_user.tenant_id)
+            article = service.create_knowledge_base_article(
+                title=article_data.title,
+                content=article_data.content,
+                summary=article_data.summary,
+                category=article_data.category,
+                tags=article_data.tags,
+                author_id=current_user.id,
+                is_published=article_data.is_published,
+                is_featured=article_data.is_featured
+            )
+        finally:
+            sync_db.close()
+        return article
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error creating article: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating article: {str(e)}"
+        )
+
+
+@router.get("/knowledge-base/articles")
+async def list_knowledge_base_articles(
+    category: Optional[str] = Query(None),
+    published_only: bool = Query(True),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    List knowledge base articles
+    
+    PERFORMANCE: Uses AsyncSession to prevent blocking the event loop.
+    """
+    try:
+        from app.models.knowledge_base import KnowledgeBaseArticle
+        from sqlalchemy import select
+        
+        stmt = select(KnowledgeBaseArticle).where(
+            KnowledgeBaseArticle.tenant_id == current_user.tenant_id
+        )
+        
+        if published_only:
+            stmt = stmt.where(KnowledgeBaseArticle.is_published == True)
+        
+        if category:
+            stmt = stmt.where(KnowledgeBaseArticle.category == category)
+        
+        stmt = stmt.order_by(KnowledgeBaseArticle.created_at.desc())
+        result = await db.execute(stmt)
+        articles = result.scalars().all()
+        return {"articles": articles}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error listing articles: {str(e)}"
+        )
+
+
+@router.get("/knowledge-base/articles/{article_id}")
+async def get_knowledge_base_article(
+    article_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Get knowledge base article
+    
+    PERFORMANCE: Uses AsyncSession to prevent blocking the event loop.
+    """
+    try:
+        from app.models.knowledge_base import KnowledgeBaseArticle
+        from sqlalchemy import select
+        
+        stmt = select(KnowledgeBaseArticle).where(
+            KnowledgeBaseArticle.id == article_id,
+            KnowledgeBaseArticle.tenant_id == current_user.tenant_id
+        )
+        result = await db.execute(stmt)
+        article = result.scalar_one_or_none()
+        
+        if not article:
+            raise HTTPException(status_code=404, detail="Article not found")
+        
+        # Increment view count
+        article.view_count += 1
+        await db.commit()
+        
+        return article
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting article: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting article: {str(e)}"
+        )
+
+
+@router.put("/knowledge-base/articles/{article_id}")
+async def update_knowledge_base_article(
+    article_id: str,
+    article_data: KnowledgeBaseArticleCreate,
+    current_user: User = Depends(check_permission("kb:update")),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Update a knowledge base article
+    
+    PERFORMANCE: Uses AsyncSession to prevent blocking the event loop.
+    """
+    try:
+        from app.core.database import SessionLocal
+        from app.models.knowledge_base import KnowledgeBaseArticle
+        from sqlalchemy import select
+        
+        # Check if article exists and belongs to tenant
+        stmt = select(KnowledgeBaseArticle).where(
+            KnowledgeBaseArticle.id == article_id,
+            KnowledgeBaseArticle.tenant_id == current_user.tenant_id
+        )
+        result = await db.execute(stmt)
+        article = result.scalar_one_or_none()
+        
+        if not article:
+            raise HTTPException(status_code=404, detail="Article not found")
+        
+        # Update article fields
+        article.title = article_data.title
+        article.content = article_data.content
+        article.summary = article_data.summary
+        article.category = article_data.category
+        article.tags = article_data.tags or []
+        article.is_published = article_data.is_published
+        article.is_featured = article_data.is_featured
+        article.updated_at = datetime.utcnow()
+        
+        await db.commit()
+        await db.refresh(article)
+        
+        return article
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error updating article: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating article: {str(e)}"
+        )
+
+
+@router.delete("/knowledge-base/articles/{article_id}")
+async def delete_knowledge_base_article(
+    article_id: str,
+    current_user: User = Depends(check_permission("kb:delete")),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Delete a knowledge base article
+    
+    PERFORMANCE: Uses AsyncSession to prevent blocking the event loop.
+    """
+    try:
+        from app.models.knowledge_base import KnowledgeBaseArticle
+        from sqlalchemy import select
+        
+        # Check if article exists and belongs to tenant
+        stmt = select(KnowledgeBaseArticle).where(
+            KnowledgeBaseArticle.id == article_id,
+            KnowledgeBaseArticle.tenant_id == current_user.tenant_id
+        )
+        result = await db.execute(stmt)
+        article = result.scalar_one_or_none()
+        
+        if not article:
+            raise HTTPException(status_code=404, detail="Article not found")
+        
+        await db.delete(article)
+        await db.commit()
+        
+        return {"message": "Article deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error deleting article: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting article: {str(e)}"
+        )
+
+
+# ============================================================================
+# AI-Powered Helpdesk Endpoints
+# ============================================================================
+
+class TicketAIAnalysisRequest(BaseModel):
+    update_fields: Optional[Dict[str, Any]] = None
+
+
+class TicketAIAnalysisResponse(BaseModel):
+    success: bool
+    improved_description: Optional[str] = None
+    suggestions: Dict[str, List[str]] = Field(default_factory=lambda: {
+        "next_actions": [],
+        "questions": [],
+        "solutions": []
+    })
+    ticket_type_suggestion: Optional[str] = None
+    priority_suggestion: Optional[str] = None
+    sla_risk: Optional[str] = None
+    auto_assign_suggestion: Optional[str] = None
+    auto_respond_suggestion: Optional[str] = None
+    confidence: Optional[float] = None
+    error: Optional[str] = None
+
+
+@router.post("/tickets/{ticket_id}/ai/analyze", response_model=TicketAIAnalysisResponse)
+async def analyze_ticket_with_ai(
+    ticket_id: str,
+    request: Optional[TicketAIAnalysisRequest] = None,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Analyze ticket with AI and generate suggestions
+    
+    PERFORMANCE: Uses AsyncSession to prevent blocking the event loop.
+    """
+    try:
+        from app.models.helpdesk import Ticket
+        from app.services.helpdesk_ai_service import HelpdeskAIService
+        from sqlalchemy import select
+        
+        # Get ticket
+        stmt = select(Ticket).where(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_user.tenant_id
+        )
+        result = await db.execute(stmt)
+        ticket = result.scalar_one_or_none()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        # Use sync session for AI service (it expects sync session)
+        from app.core.database import SessionLocal
+        sync_db = SessionLocal()
+        try:
+            ai_service = HelpdeskAIService(sync_db, current_user.tenant_id)
+            analysis = await ai_service.analyze_ticket(
+                ticket,
+                update_fields=request.update_fields if request else None
+            )
+            
+            # Update ticket with AI analysis if successful
+            if analysis.get("success"):
+                ticket.ai_suggestions = analysis.get("suggestions")
+                ticket.improved_description = analysis.get("improved_description")
+                ticket.ai_analysis_date = datetime.now(timezone.utc)
+                
+                # Update description if improved version exists
+                if analysis.get("improved_description"):
+                    if not ticket.original_description:
+                        ticket.original_description = ticket.description
+                    ticket.description = analysis.get("improved_description")
+                
+                await db.commit()
+        finally:
+            sync_db.close()
+        
+        return TicketAIAnalysisResponse(**analysis)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error analyzing ticket with AI: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error analyzing ticket: {str(e)}"
+        )
+
+
+class TicketImproveDescriptionRequest(BaseModel):
+    description: str
+
+
+class TicketImproveDescriptionResponse(BaseModel):
+    improved_description: str
+    original_description: str
+
+
+@router.post("/tickets/{ticket_id}/ai/improve-description", response_model=TicketImproveDescriptionResponse)
+async def improve_ticket_description(
+    ticket_id: str,
+    request: TicketImproveDescriptionRequest,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Improve ticket description using AI
+    
+    PERFORMANCE: Uses AsyncSession to prevent blocking the event loop.
+    """
+    try:
+        from app.models.helpdesk import Ticket
+        from app.services.helpdesk_ai_service import HelpdeskAIService
+        from sqlalchemy import select
+        from datetime import timezone
+        
+        # Get ticket
+        stmt = select(Ticket).where(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_user.tenant_id
+        )
+        result = await db.execute(stmt)
+        ticket = result.scalar_one_or_none()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        # Use sync session for AI service
+        from app.core.database import SessionLocal
+        sync_db = SessionLocal()
+        try:
+            ai_service = HelpdeskAIService(sync_db, current_user.tenant_id)
+            
+            # Temporarily set description for improvement
+            original_desc = ticket.description
+            ticket.description = request.description
+            
+            # Improve description
+            context = await ai_service._build_ticket_context(ticket)
+            improved = await ai_service._improve_description(request.description, context)
+            
+            # Restore original
+            ticket.description = original_desc
+        finally:
+            sync_db.close()
+        
+        return TicketImproveDescriptionResponse(
+            improved_description=improved,
+            original_description=request.description
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error improving description: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error improving description: {str(e)}"
+        )
+
+
+class AutoResponseRequest(BaseModel):
+    response_type: str = "acknowledgment"  # "acknowledgment", "solution", "question"
+
+
+class AutoResponseResponse(BaseModel):
+    response_text: str
+
+
+@router.post("/tickets/{ticket_id}/ai/auto-response", response_model=AutoResponseResponse)
+async def generate_auto_response(
+    ticket_id: str,
+    request: AutoResponseRequest,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Generate auto-response for ticket
+    
+    PERFORMANCE: Uses AsyncSession to prevent blocking the event loop.
+    """
+    try:
+        from app.models.helpdesk import Ticket
+        from app.services.helpdesk_ai_service import HelpdeskAIService
+        from sqlalchemy import select
+        
+        # Get ticket
+        stmt = select(Ticket).where(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_user.tenant_id
+        )
+        result = await db.execute(stmt)
+        ticket = result.scalar_one_or_none()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        # Use sync session for AI service
+        from app.core.database import SessionLocal
+        sync_db = SessionLocal()
+        try:
+            ai_service = HelpdeskAIService(sync_db, current_user.tenant_id)
+            response_text = await ai_service.generate_auto_response(
+                ticket,
+                response_type=request.response_type
+            )
+        finally:
+            sync_db.close()
+        
+        if not response_text:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to generate auto-response"
+            )
+        
+        return AutoResponseResponse(response_text=response_text)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error generating auto-response: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating auto-response: {str(e)}"
+        )
+
+
+@router.get("/tickets/{ticket_id}/ai/knowledge-base")
+async def get_ai_knowledge_base_suggestions(
+    ticket_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get AI-powered knowledge base suggestions for a ticket (runs as Celery task)"""
+    from app.tasks.helpdesk_ai_tasks import suggest_kb_articles_task
+    
+    # Trigger Celery task
+    task = suggest_kb_articles_task.delay(
+        ticket_id=ticket_id,
+        tenant_id=current_tenant.id,
+        limit=5
+    )
+    
+    # Wait for result (with timeout)
+    try:
+        result = task.get(timeout=30)  # 30 second timeout
+        return result
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting knowledge base suggestions: {e}", exc_info=True)
+        # Return empty suggestions on error
+        return {
+            "ticket_id": ticket_id,
+            "suggestions": []
+        }
+
+
+@router.post("/knowledge-base/articles/{article_id}/auto-categorize")
+async def auto_categorize_article(
+    article_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Auto-categorize article using AI"""
+    from app.core.database import SessionLocal
+    from app.services.knowledge_base_service import KnowledgeBaseService
+    from app.models.knowledge_base import KnowledgeBaseArticle
+    
+    sync_db = SessionLocal()
+    try:
+        article = sync_db.query(KnowledgeBaseArticle).filter(
+            KnowledgeBaseArticle.id == article_id,
+            KnowledgeBaseArticle.tenant_id == current_tenant.id
+        ).first()
+        
+        if not article:
+            raise HTTPException(status_code=404, detail="Article not found")
+        
+        kb_service = KnowledgeBaseService(sync_db, current_tenant.id)
+        categorization = await kb_service.auto_categorize_article(article.title, article.content)
+        
+        return categorization
+    finally:
+        sync_db.close()
+
+
+@router.get("/knowledge-base/articles/{article_id}/recommendations")
+async def get_article_recommendations(
+    article_id: str,
+    limit: int = Query(5, ge=1, le=20),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get article recommendations based on viewing patterns"""
+    from app.core.database import SessionLocal
+    from app.services.knowledge_base_service import KnowledgeBaseService
+    
+    sync_db = SessionLocal()
+    try:
+        kb_service = KnowledgeBaseService(sync_db, current_tenant.id)
+        recommendations = await kb_service.generate_article_recommendations(article_id, limit)
+        
+        return {
+            "article_id": article_id,
+            "recommendations": [
+                {
+                    "article_id": r["article"].id,
+                    "title": r["article"].title,
+                    "summary": r["article"].summary,
+                    "category": r["article"].category,
+                    "relevance_score": r["relevance_score"],
+                    "reason": r["reason"]
+                }
+                for r in recommendations
+            ]
+        }
+    finally:
+        sync_db.close()
+
+
+@router.post("/knowledge-base/articles/{article_id}/improve")
+async def improve_article_with_ai(
+    article_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get AI suggestions for improving an article"""
+    from app.core.database import SessionLocal
+    from app.services.knowledge_base_service import KnowledgeBaseService
+    from app.models.knowledge_base import KnowledgeBaseArticle
+    
+    sync_db = SessionLocal()
+    try:
+        article = sync_db.query(KnowledgeBaseArticle).filter(
+            KnowledgeBaseArticle.id == article_id,
+            KnowledgeBaseArticle.tenant_id == current_tenant.id
+        ).first()
+        
+        if not article:
+            raise HTTPException(status_code=404, detail="Article not found")
+        
+        kb_service = KnowledgeBaseService(sync_db, current_tenant.id)
+        improvements = await kb_service.improve_article_with_ai(article)
+        
+        return improvements
+    finally:
+        sync_db.close()
+
+
+@router.post("/workflows/execute")
+async def execute_workflow(
+    ticket_id: str = Body(...),
+    workflow_definition: Dict[str, Any] = Body(...),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Execute a multi-step workflow for a ticket"""
+    from app.core.database import SessionLocal
+    from app.services.workflow_service import WorkflowService
+    from app.models.helpdesk import Ticket
+    
+    sync_db = SessionLocal()
+    try:
+        ticket = sync_db.query(Ticket).filter(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        workflow_service = WorkflowService(sync_db, current_tenant.id)
+        result = await workflow_service.execute_multi_step_workflow(ticket, workflow_definition)
+        
+        return result
+    finally:
+        sync_db.close()
+
+
+@router.post("/workflows/create")
+async def create_workflow(
+    name: str = Body(...),
+    description: str = Body(...),
+    workflow_definition: Dict[str, Any] = Body(...),
+    is_active: bool = Body(True),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Create a custom workflow definition"""
+    from app.core.database import SessionLocal
+    from app.services.workflow_service import WorkflowService
+    
+    sync_db = SessionLocal()
+    try:
+        workflow_service = WorkflowService(sync_db, current_tenant.id)
+        workflow = await workflow_service.create_custom_workflow(
+            name=name,
+            description=description,
+            workflow_definition=workflow_definition,
+            is_active=is_active
+        )
+        
+        return workflow
+    finally:
+        sync_db.close()
+
+
+@router.get("/workflows")
+async def get_workflows(
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get list of available workflows"""
+    from app.core.database import SessionLocal
+    from app.services.workflow_service import WorkflowService
+    
+    sync_db = SessionLocal()
+    try:
+        workflow_service = WorkflowService(sync_db, current_tenant.id)
+        workflows = await workflow_service.get_available_workflows()
+        
+        return {"workflows": workflows}
+    finally:
+        sync_db.close()
+
+
+# ==================== Helpdesk Analytics & Reporting ====================
+
+@router.get("/analytics/volume-trends")
+async def get_ticket_volume_trends(
+    start_date: date = Query(..., description="Start date"),
+    end_date: date = Query(..., description="End date"),
+    interval: str = Query("day", regex="^(day|week|month)$", description="Time interval"),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get ticket volume trends over time"""
+    try:
+        from sqlalchemy import func, extract, case
+        from datetime import timedelta
+        
+        start_dt = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+        end_dt = datetime.combine(end_date, datetime.max.time()).replace(tzinfo=timezone.utc)
+        
+        # Build query based on interval
+        if interval == "day":
+            date_expr = func.date(Ticket.created_at).label('period')
+            group_by = func.date(Ticket.created_at)
+        elif interval == "week":
+            date_expr = func.date_trunc('week', Ticket.created_at).label('period')
+            group_by = func.date_trunc('week', Ticket.created_at)
+        else:  # month
+            date_expr = func.date_trunc('month', Ticket.created_at).label('period')
+            group_by = func.date_trunc('month', Ticket.created_at)
+        
+        # Use text cast for status comparisons to avoid enum type issues
+        from sqlalchemy import cast, String
+        stmt = select(
+            date_expr,
+            func.count(Ticket.id).label('total_tickets'),
+            func.count(case((cast(Ticket.status, String) == "open", 1))).label('open'),
+            func.count(case((cast(Ticket.status, String) == "in_progress", 1))).label('in_progress'),
+            func.count(case((cast(Ticket.status, String) == "resolved", 1))).label('resolved'),
+            func.count(case((cast(Ticket.status, String) == "closed", 1))).label('closed')
+        ).where(
+            and_(
+                Ticket.tenant_id == current_tenant.id,
+                Ticket.created_at >= start_dt,
+                Ticket.created_at <= end_dt
+            )
+        ).group_by(group_by).order_by(group_by)
+        
+        result = await db.execute(stmt)
+        rows = result.all()
+        
+        trends = []
+        for row in rows:
+            trends.append({
+                'period': row.period.isoformat() if hasattr(row.period, 'isoformat') else str(row.period),
+                'total_tickets': row.total_tickets or 0,
+                'open': row.open or 0,
+                'in_progress': row.in_progress or 0,
+                'resolved': row.resolved or 0,
+                'closed': row.closed or 0
+            })
+        
+        return {
+            'period': {'start': start_date.isoformat(), 'end': end_date.isoformat()},
+            'interval': interval,
+            'trends': trends
+        }
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting volume trends: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/analytics/resolution-times")
+async def get_resolution_time_analytics(
+    start_date: date = Query(..., description="Start date"),
+    end_date: date = Query(..., description="End date"),
+    group_by: str = Query("priority", regex="^(priority|type|status)$", description="Group by field"),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get resolution time analytics grouped by priority, type, or status"""
+    try:
+        from sqlalchemy import func, case, extract
+        
+        start_dt = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+        end_dt = datetime.combine(end_date, datetime.max.time()).replace(tzinfo=timezone.utc)
+        
+        # Build group by expression
+        if group_by == "priority":
+            group_expr = Ticket.priority
+        elif group_by == "type":
+            group_expr = Ticket.ticket_type
+        else:  # status
+            group_expr = Ticket.status
+        
+        stmt = select(
+            group_expr.label('group_value'),
+            func.count(Ticket.id).label('total_tickets'),
+            func.avg(
+                extract('epoch', Ticket.resolved_at - Ticket.created_at) / 3600
+            ).label('avg_resolution_hours'),
+            func.avg(
+                extract('epoch', Ticket.first_response_at - Ticket.created_at) / 3600
+            ).label('avg_first_response_hours'),
+            func.min(
+                extract('epoch', Ticket.resolved_at - Ticket.created_at) / 3600
+            ).label('min_resolution_hours'),
+            func.max(
+                extract('epoch', Ticket.resolved_at - Ticket.created_at) / 3600
+            ).label('max_resolution_hours')
+        ).where(
+            and_(
+                Ticket.tenant_id == current_tenant.id,
+                Ticket.created_at >= start_dt,
+                Ticket.created_at <= end_dt,
+                Ticket.resolved_at.isnot(None)
+            )
+        ).group_by(group_expr)
+        
+        result = await db.execute(stmt)
+        rows = result.all()
+        
+        analytics = []
+        for row in rows:
+            analytics.append({
+                'group_value': row.group_value.value if hasattr(row.group_value, 'value') else str(row.group_value),
+                'total_tickets': row.total_tickets or 0,
+                'avg_resolution_hours': round(row.avg_resolution_hours or 0, 2),
+                'avg_first_response_hours': round(row.avg_first_response_hours or 0, 2),
+                'min_resolution_hours': round(row.min_resolution_hours or 0, 2),
+                'max_resolution_hours': round(row.max_resolution_hours or 0, 2)
+            })
+        
+        return {
+            'period': {'start': start_date.isoformat(), 'end': end_date.isoformat()},
+            'group_by': group_by,
+            'analytics': analytics
+        }
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting resolution time analytics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/analytics/distributions")
+async def get_ticket_distributions(
+    start_date: date = Query(..., description="Start date"),
+    end_date: date = Query(..., description="End date"),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get ticket distributions by priority, status, and type"""
+    try:
+        from sqlalchemy import func, case
+        
+        start_dt = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+        end_dt = datetime.combine(end_date, datetime.max.time()).replace(tzinfo=timezone.utc)
+        
+        # Priority distribution
+        priority_stmt = select(
+            Ticket.priority,
+            func.count(Ticket.id).label('count')
+        ).where(
+            and_(
+                Ticket.tenant_id == current_tenant.id,
+                Ticket.created_at >= start_dt,
+                Ticket.created_at <= end_dt
+            )
+        ).group_by(Ticket.priority)
+        
+        # Status distribution
+        status_stmt = select(
+            Ticket.status,
+            func.count(Ticket.id).label('count')
+        ).where(
+            and_(
+                Ticket.tenant_id == current_tenant.id,
+                Ticket.created_at >= start_dt,
+                Ticket.created_at <= end_dt
+            )
+        ).group_by(Ticket.status)
+        
+        # Type distribution
+        type_stmt = select(
+            Ticket.ticket_type,
+            func.count(Ticket.id).label('count')
+        ).where(
+            and_(
+                Ticket.tenant_id == current_tenant.id,
+                Ticket.created_at >= start_dt,
+                Ticket.created_at <= end_dt
+            )
+        ).group_by(Ticket.ticket_type)
+        
+        priority_result = await db.execute(priority_stmt)
+        status_result = await db.execute(status_stmt)
+        type_result = await db.execute(type_stmt)
+        
+        priority_dist = {
+            row.priority.value if hasattr(row.priority, 'value') else str(row.priority): row.count
+            for row in priority_result.all()
+        }
+        
+        status_dist = {
+            row.status.value if hasattr(row.status, 'value') else str(row.status): row.count
+            for row in status_result.all()
+        }
+        
+        type_dist = {
+            row.ticket_type.value if hasattr(row.ticket_type, 'value') else str(row.ticket_type): row.count
+            for row in type_result.all()
+        }
+        
+        return {
+            'period': {'start': start_date.isoformat(), 'end': end_date.isoformat()},
+            'priority_distribution': priority_dist,
+            'status_distribution': status_dist,
+            'type_distribution': type_dist
+        }
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting distributions: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/analytics/customer-performance")
+async def get_customer_performance(
+    start_date: date = Query(..., description="Start date"),
+    end_date: date = Query(..., description="End date"),
+    limit: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get ticket performance metrics by customer"""
+    try:
+        from sqlalchemy import func, extract
+        from app.models.crm import Customer
+        
+        start_dt = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+        end_dt = datetime.combine(end_date, datetime.max.time()).replace(tzinfo=timezone.utc)
+        
+        # Fetch tickets and calculate in Python to avoid SQLAlchemy type issues
+        tickets_stmt = select(Ticket).where(
+            and_(
+                Ticket.tenant_id == current_tenant.id,
+                Ticket.created_at >= start_dt,
+                Ticket.created_at <= end_dt,
+                Ticket.customer_id.isnot(None)
+            )
+        )
+        tickets_result = await db.execute(tickets_stmt)
+        tickets = tickets_result.scalars().all()
+        
+        # Get customer details
+        customer_ids = list(set([t.customer_id for t in tickets if t.customer_id]))
+        customers_stmt = select(Customer).where(Customer.id.in_(customer_ids)) if customer_ids else select(Customer).where(False)
+        customers_result = await db.execute(customers_stmt)
+        customers = {c.id: c for c in customers_result.scalars().all()}
+        
+        # Group by customer and calculate metrics
+        customer_stats = {}
+        for ticket in tickets:
+            customer_id = ticket.customer_id
+            if customer_id not in customer_stats:
+                customer = customers.get(customer_id)
+                customer_stats[customer_id] = {
+                    'customer_id': customer_id,
+                    'customer_name': customer.company_name if customer else 'Unknown',
+                    'total_tickets': 0,
+                    'fr_breaches': 0,
+                    'res_breaches': 0,
+                    'fr_times': [],
+                    'res_times': []
+                }
+            
+            stats = customer_stats[customer_id]
+            stats['total_tickets'] += 1
+            
+            if ticket.sla_first_response_breached:
+                stats['fr_breaches'] += 1
+            if ticket.sla_resolution_breached:
+                stats['res_breaches'] += 1
+            
+            # Calculate first response time
+            if ticket.first_response_at and ticket.created_at:
+                fr_hours = (ticket.first_response_at - ticket.created_at).total_seconds() / 3600
+                stats['fr_times'].append(fr_hours)
+            
+            # Calculate resolution time
+            if ticket.resolved_at and ticket.created_at:
+                res_hours = (ticket.resolved_at - ticket.created_at).total_seconds() / 3600
+                stats['res_times'].append(res_hours)
+        
+        # Build response data
+        # Build performance data
+        performance = []
+        for customer_id, stats in customer_stats.items():
+            total = stats['total_tickets']
+            fr_breaches = stats['fr_breaches']
+            res_breaches = stats['res_breaches']
+            
+            avg_fr_hours = sum(stats['fr_times']) / len(stats['fr_times']) if stats['fr_times'] else 0
+            avg_res_hours = sum(stats['res_times']) / len(stats['res_times']) if stats['res_times'] else 0
+            
+            performance.append({
+                'customer_id': customer_id,
+                'customer_name': stats['customer_name'],
+                'total_tickets': total,
+                'avg_resolution_hours': round(avg_res_hours, 2),
+                'avg_first_response_hours': round(avg_fr_hours, 2),
+                'first_response_breaches': fr_breaches,
+                'resolution_breaches': res_breaches,
+                'first_response_compliance_rate': round(((total - fr_breaches) / total * 100) if total > 0 else 100, 2),
+                'resolution_compliance_rate': round(((total - res_breaches) / total * 100) if total > 0 else 100, 2)
+            })
+        
+        # Sort by total_tickets descending and limit
+        performance = sorted(performance, key=lambda x: x['total_tickets'], reverse=True)[:limit]
+        
+        return {
+            'period': {'start': start_date.isoformat(), 'end': end_date.isoformat()},
+            'customer_performance': performance
+        }
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting customer performance: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/analytics/agent-workload")
+async def get_agent_workload(
+    start_date: date = Query(..., description="Start date"),
+    end_date: date = Query(..., description="End date"),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get agent workload distribution and metrics"""
+    try:
+        from sqlalchemy import func, case
+        
+        start_dt = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+        end_dt = datetime.combine(end_date, datetime.max.time()).replace(tzinfo=timezone.utc)
+        
+        # Use func.concat to combine first_name and last_name, or fetch separately and combine in Python
+        # Use cast to String to avoid enum type issues
+        from sqlalchemy import String, cast
+        
+        stmt = select(
+            Ticket.assigned_to_id,
+            User.first_name,
+            User.last_name,
+            User.email.label('agent_email'),
+            func.count(Ticket.id).label('total_tickets'),
+            func.count(case((cast(Ticket.status, String) == "OPEN", 1))).label('open_tickets'),
+            func.count(case((cast(Ticket.status, String) == "IN_PROGRESS", 1))).label('in_progress_tickets'),
+            func.count(case((cast(Ticket.status, String) == "RESOLVED", 1))).label('resolved_tickets'),
+            func.avg(
+                func.extract('epoch', Ticket.resolved_at - Ticket.created_at) / 3600
+            ).label('avg_resolution_hours')
+        ).join(
+            User, Ticket.assigned_to_id == User.id, isouter=True
+        ).where(
+            and_(
+                Ticket.tenant_id == current_tenant.id,
+                Ticket.created_at >= start_dt,
+                Ticket.created_at <= end_dt
+            )
+        ).group_by(
+            Ticket.assigned_to_id,
+            User.first_name,
+            User.last_name,
+            User.email
+        ).order_by(
+            func.count(Ticket.id).desc()
+        )
+        
+        result = await db.execute(stmt)
+        rows = result.all()
+        
+        workload = []
+        for row in rows:
+            # Combine first_name and last_name
+            agent_name = 'Unassigned'
+            if row.first_name or row.last_name:
+                parts = [p for p in [row.first_name, row.last_name] if p]
+                agent_name = ' '.join(parts) if parts else 'Unassigned'
+            
+            workload.append({
+                'agent_id': row.assigned_to_id,
+                'agent_name': agent_name,
+                'agent_email': row.agent_email,
+                'total_tickets': row.total_tickets or 0,
+                'open_tickets': row.open_tickets or 0,
+                'in_progress_tickets': row.in_progress_tickets or 0,
+                'resolved_tickets': row.resolved_tickets or 0,
+                'avg_resolution_hours': round(row.avg_resolution_hours or 0, 2) if row.avg_resolution_hours else None
+            })
+        
+        return {
+            'period': {'start': start_date.isoformat(), 'end': end_date.isoformat()},
+            'agent_workload': workload
+        }
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting agent workload: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/analytics/export")
+async def export_helpdesk_analytics(
+    start_date: date = Query(..., description="Start date"),
+    end_date: date = Query(..., description="End date"),
+    format: str = Query("csv", regex="^(csv|pdf|excel)$", description="Export format"),
+    report_type: str = Query("overview", regex="^(overview|agents|customers|resolution)$", description="Report type"),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Export helpdesk analytics report"""
+    try:
+        from app.services.report_export_service import ReportExportService
+        from fastapi.responses import Response
+        
+        export_service = ReportExportService()
+        
+        # Load data based on report type
+        data = []
+        summary = {
+            "Period": f"{start_date} to {end_date}",
+            "Report Type": report_type
+        }
+        
+        # Import the data fetching functions (they're in the same file)
+        # We'll duplicate the logic here to avoid circular imports
+        from sqlalchemy import func, case, extract
+        from app.models.helpdesk import Ticket
+        from app.models.tenant import User
+        from app.models.crm import Customer
+        from datetime import timezone as tz
+        
+        start_dt = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=tz.utc)
+        end_dt = datetime.combine(end_date, datetime.max.time()).replace(tzinfo=tz.utc)
+        
+        if report_type == "overview":
+            # Get volume trends - use cast to String to avoid enum type issues
+            from sqlalchemy import String, cast
+            date_expr = func.date(Ticket.created_at).label('period')
+            volume_stmt = select(
+                date_expr,
+                func.count(Ticket.id).label('total_tickets'),
+                func.count(case((cast(Ticket.status, String) == "OPEN", 1))).label('open'),
+                func.count(case((cast(Ticket.status, String) == "IN_PROGRESS", 1))).label('in_progress'),
+                func.count(case((cast(Ticket.status, String) == "RESOLVED", 1))).label('resolved'),
+                func.count(case((cast(Ticket.status, String) == "CLOSED", 1))).label('closed')
+            ).where(
+                and_(
+                    Ticket.tenant_id == current_tenant.id,
+                    Ticket.created_at >= start_dt,
+                    Ticket.created_at <= end_dt
+                )
+            ).group_by(func.date(Ticket.created_at)).order_by(func.date(Ticket.created_at))
+            
+            volume_result = await db.execute(volume_stmt)
+            for row in volume_result.all():
+                data.append({
+                    "Period": row.period.isoformat() if hasattr(row.period, 'isoformat') else str(row.period),
+                    "Total Tickets": row.total_tickets or 0,
+                    "Open": row.open or 0,
+                    "In Progress": row.in_progress or 0,
+                    "Resolved": row.resolved or 0,
+                    "Closed": row.closed or 0
+                })
+        
+        elif report_type == "agents":
+            # Get agent performance from SLA endpoint logic
+            from app.api.v1.endpoints.sla import get_sla_performance_by_agent
+            agent_perf_response = await get_sla_performance_by_agent(start_date, end_date, current_user, current_tenant, db)
+            
+            for agent in agent_perf_response.get('performance_by_agent', []):
+                data.append({
+                    "Agent": agent['agent_name'],
+                    "Email": agent.get('agent_email', ''),
+                    "Total Tickets": agent['total_tickets'],
+                    "FR Breaches": agent['first_response']['breaches'],
+                    "FR Compliance": f"{agent['first_response']['compliance_rate']}%",
+                    "Res Breaches": agent['resolution']['breaches'],
+                    "Res Compliance": f"{agent['resolution']['compliance_rate']}%"
+                })
+        
+        elif report_type == "customers":
+            # Get customer performance
+            customer_stmt = select(
+                Ticket.customer_id,
+                Customer.company_name.label('customer_name'),
+                func.count(Ticket.id).label('total_tickets'),
+                func.avg(extract('epoch', Ticket.resolved_at - Ticket.created_at) / 3600).label('avg_resolution_hours'),
+                func.avg(extract('epoch', Ticket.first_response_at - Ticket.created_at) / 3600).label('avg_first_response_hours'),
+                func.sum(func.cast(Ticket.sla_first_response_breached, int)).label('fr_breaches'),
+                func.sum(func.cast(Ticket.sla_resolution_breached, int)).label('res_breaches')
+            ).join(
+                Customer, Ticket.customer_id == Customer.id, isouter=True
+            ).where(
+                and_(
+                    Ticket.tenant_id == current_tenant.id,
+                    Ticket.created_at >= start_dt,
+                    Ticket.created_at <= end_dt,
+                    Ticket.customer_id.isnot(None)
+                )
+            ).group_by(
+                Ticket.customer_id,
+                Customer.company_name
+            ).order_by(
+                func.count(Ticket.id).desc()
+            ).limit(100)
+            
+            customer_result = await db.execute(customer_stmt)
+            for row in customer_result.all():
+                total = row.total_tickets or 0
+                fr_breaches = row.fr_breaches or 0
+                res_breaches = row.res_breaches or 0
+                
+                data.append({
+                    "Customer": row.customer_name or 'Unknown',
+                    "Total Tickets": total,
+                    "Avg Resolution (hrs)": round(row.avg_resolution_hours or 0, 2),
+                    "Avg First Response (hrs)": round(row.avg_first_response_hours or 0, 2),
+                    "FR Breaches": fr_breaches,
+                    "FR Compliance": f"{round(((total - fr_breaches) / total * 100) if total > 0 else 100, 2)}%",
+                    "Res Breaches": res_breaches,
+                    "Res Compliance": f"{round(((total - res_breaches) / total * 100) if total > 0 else 100, 2)}%"
+                })
+        
+        elif report_type == "resolution":
+            # Get resolution analytics
+            group_expr = Ticket.priority
+            resolution_stmt = select(
+                group_expr.label('group_value'),
+                func.count(Ticket.id).label('total_tickets'),
+                func.avg(extract('epoch', Ticket.resolved_at - Ticket.created_at) / 3600).label('avg_resolution_hours'),
+                func.avg(extract('epoch', Ticket.first_response_at - Ticket.created_at) / 3600).label('avg_first_response_hours'),
+                func.min(extract('epoch', Ticket.resolved_at - Ticket.created_at) / 3600).label('min_resolution_hours'),
+                func.max(extract('epoch', Ticket.resolved_at - Ticket.created_at) / 3600).label('max_resolution_hours')
+            ).where(
+                and_(
+                    Ticket.tenant_id == current_tenant.id,
+                    Ticket.created_at >= start_dt,
+                    Ticket.created_at <= end_dt,
+                    Ticket.resolved_at.isnot(None)
+                )
+            ).group_by(group_expr)
+            
+            resolution_result = await db.execute(resolution_stmt)
+            for row in resolution_result.all():
+                data.append({
+                    "Priority": row.group_value.value if hasattr(row.group_value, 'value') else str(row.group_value),
+                    "Total Tickets": row.total_tickets or 0,
+                    "Avg Resolution (hrs)": round(row.avg_resolution_hours or 0, 2),
+                    "Avg First Response (hrs)": round(row.avg_first_response_hours or 0, 2),
+                    "Min Resolution (hrs)": round(row.min_resolution_hours or 0, 2),
+                    "Max Resolution (hrs)": round(row.max_resolution_hours or 0, 2)
+                })
+        
+        # Generate export
+        if format == "csv":
+            output = export_service.export_to_csv(data, "helpdesk_analytics")
+            return Response(
+                content=output.read(),
+                media_type="text/csv",
+                headers={"Content-Disposition": f'attachment; filename="helpdesk_analytics_{start_date}_{end_date}.csv"'}
+            )
+        elif format == "pdf":
+            output = export_service.export_to_pdf(
+                f"Helpdesk Analytics Report - {report_type.title()}",
+                data,
+                summary,
+                "helpdesk_analytics"
+            )
+            return Response(
+                content=output.read(),
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="helpdesk_analytics_{start_date}_{end_date}.pdf"'}
+            )
+        else:  # excel
+            output = export_service.export_to_excel(data, summary, "helpdesk_analytics")
+            return Response(
+                content=output.read(),
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": f'attachment; filename="helpdesk_analytics_{start_date}_{end_date}.xlsx"'}
+            )
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error exporting helpdesk analytics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/tickets/{ticket_id}/knowledge-base/generate-answer")
+async def generate_answer_from_kb(
+    ticket_id: str,
+    article_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Generate AI-powered answer from knowledge base articles (runs as Celery task)"""
+    from app.tasks.helpdesk_ai_tasks import generate_kb_answer_task
+    
+    # Trigger Celery task
+    task = generate_kb_answer_task.delay(
+        ticket_id=ticket_id,
+        tenant_id=current_tenant.id,
+        article_id=article_id
+    )
+    
+    # Wait for result (with timeout)
+    try:
+        result = task.get(timeout=60)  # 60 second timeout for answer generation
+        return result
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error generating answer from KB: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating answer: {str(e)}"
+        )
+
+
+@router.post("/tickets/{ticket_id}/knowledge-base/quick-response")
+async def generate_quick_response(
+    ticket_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Generate quick response template from knowledge base (runs as Celery task)"""
+    from app.tasks.helpdesk_ai_tasks import generate_quick_response_task
+    
+    # Trigger Celery task
+    task = generate_quick_response_task.delay(
+        ticket_id=ticket_id,
+        tenant_id=current_tenant.id
+    )
+    
+    # Wait for result (with timeout)
+    try:
+        result = task.get(timeout=30)  # 30 second timeout for quick response
+        return result
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error generating quick response: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating quick response: {str(e)}"
+        )
+
+
+@router.get("/tickets/{ticket_id}/npa")
+async def get_ticket_npa(
+    ticket_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get Next Point of Action for a ticket"""
+    from app.core.database import SessionLocal
+    from app.services.ticket_npa_service import TicketNPAService
+    from app.models.helpdesk import Ticket
+    
+    sync_db = SessionLocal()
+    try:
+        ticket = sync_db.query(Ticket).filter(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        npa_service = TicketNPAService(sync_db, current_tenant.id)
+        npa_status = await npa_service.ensure_npa_exists(ticket)
+        
+        # Return enhanced NPA data
+        # Handle npa_state as string (not enum object)
+        npa_state_value = None
+        if ticket.npa_state:
+            if isinstance(ticket.npa_state, str):
+                npa_state_value = ticket.npa_state
+            elif hasattr(ticket.npa_state, 'value'):
+                npa_state_value = ticket.npa_state.value
+            else:
+                npa_state_value = str(ticket.npa_state)
+        
+        return {
+            **npa_status,
+            "npa_state": npa_state_value,
+            "npa_original_text": ticket.npa_original_text,
+            "npa_cleaned_text": ticket.npa_cleaned_text,
+            "npa_date_override": ticket.npa_date_override,
+            "npa_exclude_from_sla": ticket.npa_exclude_from_sla,
+            "npa_ai_cleanup_status": ticket.npa_ai_cleanup_status,
+            "npa_ai_cleanup_task_id": ticket.npa_ai_cleanup_task_id,
+            "npa_answers_original_text": ticket.npa_answers_original_text,
+            "npa_answers_cleaned_text": ticket.npa_answers_cleaned_text,
+            "npa_answers_ai_cleanup_status": ticket.npa_answers_ai_cleanup_status,
+            "npa_answers_ai_cleanup_task_id": ticket.npa_answers_ai_cleanup_task_id
+        }
+    finally:
+        sync_db.close()
+
+
+@router.get("/tickets/{ticket_id}/npa/ai-suggestions")
+async def get_npa_ai_suggestions(
+    ticket_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get AI-powered suggestions for agent assignment, issue diagnosis, and troubleshooting"""
+    from app.core.database import SessionLocal
+    from app.services.npa_ai_suggestions_service import NPAAISuggestionsService
+    from app.models.helpdesk import Ticket
+    
+    sync_db = SessionLocal()
+    try:
+        ticket = sync_db.query(Ticket).filter(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        suggestions_service = NPAAISuggestionsService(sync_db, current_tenant.id)
+        result = await suggestions_service.generate_suggestions(ticket)
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting AI suggestions: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting AI suggestions: {str(e)}"
+        )
+    finally:
+        sync_db.close()
+
+
+class NPAUpdateRequest(BaseModel):
+    npa: Optional[str] = None  # Made optional to allow partial updates
+    npa_cleaned_text: Optional[str] = None  # Allow setting cleaned text directly
+    due_date: Optional[str] = None
+    assigned_to_id: Optional[str] = None
+    npa_state: Optional[str] = None  # investigation, waiting_customer, waiting_vendor, waiting_parts, solution, etc.
+    date_override: bool = False
+    exclude_from_sla: Optional[bool] = None
+    trigger_ai_cleanup: bool = True
+
+
+@router.put("/tickets/{ticket_id}/npa")
+async def update_ticket_npa(
+    ticket_id: str,
+    request: NPAUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Update Next Point of Action for a ticket"""
+    from app.core.database import SessionLocal
+    from app.services.ticket_npa_service import TicketNPAService
+    from app.models.helpdesk import Ticket
+    from datetime import datetime
+    
+    sync_db = SessionLocal()
+    try:
+        ticket = sync_db.query(Ticket).filter(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        # Parse due date if provided
+        due_date_obj = None
+        if request.due_date:
+            try:
+                due_date_obj = datetime.fromisoformat(request.due_date.replace('Z', '+00:00'))
+            except:
+                raise HTTPException(status_code=400, detail="Invalid due_date format")
+        
+        # Parse NPA state - convert to lowercase string to match database enum
+        npa_state = None
+        if request.npa_state:
+            # Normalize to lowercase with underscores to match database enum
+            npa_state = request.npa_state.lower().replace(' ', '_')
+            # Validate it's a valid enum value
+            valid_states = ['investigation', 'waiting_customer', 'waiting_vendor', 'waiting_parts', 'solution', 'implementation', 'testing', 'documentation', 'other']
+            if npa_state not in valid_states:
+                npa_state = None
+        
+        npa_service = TicketNPAService(sync_db, current_tenant.id)
+        
+        # If npa is not provided, use existing npa_original_text or next_point_of_action
+        npa_text = request.npa
+        if not npa_text:
+            npa_text = ticket.npa_original_text or ticket.next_point_of_action or ""
+        
+        result = npa_service.update_npa(
+            ticket=ticket,
+            npa=npa_text,
+            due_date=due_date_obj,
+            assigned_to_id=request.assigned_to_id,
+            npa_state=npa_state,
+            date_override=request.date_override,
+            exclude_from_sla=request.exclude_from_sla,
+            trigger_ai_cleanup=request.trigger_ai_cleanup
+        )
+        
+        # If cleaned text is provided directly, set it
+        if request.npa_cleaned_text:
+            ticket.npa_cleaned_text = request.npa_cleaned_text
+            sync_db.commit()
+            result["npa_cleaned_text"] = request.npa_cleaned_text
+        
+        return result
+    finally:
+        sync_db.close()
+
+
+@router.get("/tickets/{ticket_id}/npa/history")
+async def get_ticket_npa_history(
+    ticket_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get NPA history (call history) for a ticket"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import Ticket, NPAHistory
+    
+    sync_db = SessionLocal()
+    try:
+        ticket = sync_db.query(Ticket).filter(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        # Get all NPA history entries
+        npa_history = sync_db.query(NPAHistory).filter(
+            NPAHistory.ticket_id == ticket_id,
+            NPAHistory.tenant_id == current_tenant.id
+        ).order_by(NPAHistory.created_at).all()
+        
+        # Format response
+        history_list = []
+        for npa in npa_history:
+            history_list.append({
+                "id": npa.id,
+                "npa_original_text": npa.npa_original_text,
+                "npa_cleaned_text": npa.npa_cleaned_text,
+                "npa_state": npa.npa_state,
+                "assigned_to_id": npa.assigned_to_id,
+                "assigned_to_name": f"{npa.assigned_to.first_name} {npa.assigned_to.last_name}" if npa.assigned_to else None,
+                "due_date": npa.due_date.isoformat() if npa.due_date else None,
+                "date_override": npa.date_override,
+                "exclude_from_sla": npa.exclude_from_sla,
+                "ai_cleanup_status": npa.ai_cleanup_status,
+                "answers_to_questions": npa.answers_to_questions,
+                "completed_at": npa.completed_at.isoformat() if npa.completed_at else None,
+                "completed_by_id": npa.completed_by_id,
+                "completed_by_name": f"{npa.completed_by.first_name} {npa.completed_by.last_name}" if npa.completed_by else None,
+                "completion_notes": npa.completion_notes,
+                "created_at": npa.created_at.isoformat() if npa.created_at else None,
+                "updated_at": npa.updated_at.isoformat() if npa.updated_at else None
+            })
+        
+        return {
+            "ticket_id": ticket_id,
+            "history": history_list,
+            "current_npa": {
+                "npa_original_text": ticket.npa_original_text,
+                "npa_cleaned_text": ticket.npa_cleaned_text,
+                "npa_state": ticket.npa_state,
+                "due_date": ticket.next_point_of_action_due_date.isoformat() if ticket.next_point_of_action_due_date else None,
+                "assigned_to_id": ticket.next_point_of_action_assigned_to_id
+            } if ticket.npa_original_text else None
+        }
+    finally:
+        sync_db.close()
+
+
+@router.put("/tickets/{ticket_id}/npa/history/{npa_history_id}/answers")
+async def update_npa_history_answers(
+    ticket_id: str,
+    npa_history_id: str,
+    answers: str = Body(..., embed=True),
+    trigger_ai_cleanup: bool = Body(True, embed=True),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Update answers to questions in an NPA history entry with AI cleanup support"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import Ticket, NPAHistory
+    from app.tasks.npa_answers_tasks import cleanup_npa_answers_task
+    
+    sync_db = SessionLocal()
+    try:
+        ticket = sync_db.query(Ticket).filter(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        npa_entry = sync_db.query(NPAHistory).filter(
+            NPAHistory.id == npa_history_id,
+            NPAHistory.ticket_id == ticket_id,
+            NPAHistory.tenant_id == current_tenant.id
+        ).first()
+        
+        if not npa_entry:
+            raise HTTPException(status_code=404, detail="NPA history entry not found")
+        
+        # Store original answers
+        npa_entry.answers_to_questions = answers
+        
+        # Trigger AI cleanup if requested
+        if trigger_ai_cleanup and answers.strip():
+            npa_entry.answers_ai_cleanup_status = "pending"
+            task = cleanup_npa_answers_task.delay(
+                ticket_id=ticket_id,
+                tenant_id=current_tenant.id,
+                original_text=answers,
+                npa_history_id=npa_history_id
+            )
+            npa_entry.answers_ai_cleanup_task_id = task.id
+        else:
+            # Use original as cleaned if no cleanup
+            npa_entry.answers_cleaned_text = answers
+            npa_entry.answers_ai_cleanup_status = "skipped"
+        
+        sync_db.commit()
+        
+        return {
+            "success": True,
+            "npa_history_id": npa_history_id,
+            "answers_original_text": answers,
+            "answers_cleaned_text": npa_entry.answers_cleaned_text,
+            "ai_cleanup_status": npa_entry.answers_ai_cleanup_status,
+            "ai_cleanup_task_id": npa_entry.answers_ai_cleanup_task_id
+        }
+    finally:
+        sync_db.close()
+
+
+@router.put("/tickets/{ticket_id}/npa/answers")
+async def update_current_npa_answers(
+    ticket_id: str,
+    answers: str = Body(..., embed=True),
+    trigger_ai_cleanup: bool = Body(True, embed=True),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Update answers to questions in the current NPA with AI cleanup support"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import Ticket
+    from app.tasks.npa_answers_tasks import cleanup_npa_answers_task
+    
+    sync_db = SessionLocal()
+    try:
+        ticket = sync_db.query(Ticket).filter(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        # Store original answers
+        ticket.npa_answers_original_text = answers
+        
+        # Trigger AI cleanup if requested
+        if trigger_ai_cleanup and answers.strip():
+            ticket.npa_answers_ai_cleanup_status = "processing"  # Set to processing immediately
+            task = cleanup_npa_answers_task.delay(
+                ticket_id=ticket.id,
+                tenant_id=current_tenant.id,
+                original_text=answers,
+                npa_history_id=None  # Explicitly None for current NPA
+            )
+            ticket.npa_answers_ai_cleanup_task_id = task.id
+        else:
+            # Use original as cleaned if no cleanup
+            ticket.npa_answers_cleaned_text = answers
+            ticket.npa_answers_ai_cleanup_status = "skipped"
+        
+        sync_db.commit()
+        sync_db.refresh(ticket)  # Refresh to get latest values
+        
+        return {
+            "success": True,
+            "answers_original_text": ticket.npa_answers_original_text,
+            "answers_cleaned_text": ticket.npa_answers_cleaned_text,
+            "ai_cleanup_status": ticket.npa_answers_ai_cleanup_status,
+            "ai_cleanup_task_id": ticket.npa_answers_ai_cleanup_task_id
+        }
+    finally:
+        sync_db.close()
+
+
+@router.post("/tickets/{ticket_id}/npa/regenerate")
+async def regenerate_ticket_npa(
+    ticket_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Regenerate Next Point of Action for a ticket using AI"""
+    from app.core.database import SessionLocal
+    from app.services.ticket_npa_service import TicketNPAService
+    from app.models.helpdesk import Ticket
+    
+    sync_db = SessionLocal()
+    try:
+        ticket = sync_db.query(Ticket).filter(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        npa_service = TicketNPAService(sync_db, current_tenant.id)
+        npa_result = await npa_service.generate_npa(ticket)
+        
+        if npa_result.get("success"):
+            result = await npa_service.update_npa(
+                ticket=ticket,
+                npa=npa_result["npa"],
+                due_date=npa_result.get("due_date"),
+                assigned_to_id=npa_result.get("assigned_to_id"),
+                trigger_ai_cleanup=True
+            )
+            return result
+        else:
+            raise HTTPException(status_code=500, detail=npa_result.get("error", "Failed to generate NPA"))
+    finally:
+        sync_db.close()
+
+
+@router.get("/tickets/npa/overdue")
+async def get_overdue_npas(
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get all tickets with overdue Next Point of Actions"""
+    from app.core.database import SessionLocal
+    from app.services.ticket_npa_service import TicketNPAService
+    
+    sync_db = SessionLocal()
+    try:
+        npa_service = TicketNPAService(sync_db, current_tenant.id)
+        overdue = await npa_service.get_overdue_npas()
+        
+        return {
+            "overdue_count": len(overdue),
+            "tickets": overdue
+        }
+    finally:
+        sync_db.close()
+
+
+@router.get("/tickets/npa/missing")
+async def get_tickets_without_npa(
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get all tickets that are missing Next Point of Action"""
+    from app.core.database import SessionLocal
+    from app.services.ticket_npa_service import TicketNPAService
+    
+    sync_db = SessionLocal()
+    try:
+        npa_service = TicketNPAService(sync_db, current_tenant.id)
+        tickets = await npa_service.get_tickets_without_npa()
+        
+        return {
+            "missing_count": len(tickets),
+            "tickets": [
+                {
+                    "id": t.id,
+                    "ticket_number": t.ticket_number,
+                    "title": t.title,
+                    "status": t.status.value if hasattr(t.status, 'value') else str(t.status),
+                    "priority": t.priority.value if hasattr(t.priority, 'value') else str(t.priority)
+                }
+                for t in tickets
+            ]
+        }
+    finally:
+        sync_db.close()
+
+
+@router.post("/tickets/npa/ensure-all")
+async def ensure_all_tickets_have_npa(
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Ensure all active tickets have Next Point of Action (batch operation)"""
+    from app.core.database import SessionLocal
+    from app.services.ticket_npa_service import TicketNPAService
+    
+    sync_db = SessionLocal()
+    try:
+        npa_service = TicketNPAService(sync_db, current_tenant.id)
+        tickets = await npa_service.get_tickets_without_npa()
+        
+        results = {
+            "processed": 0,
+            "generated": 0,
+            "errors": []
+        }
+        
+        for ticket in tickets:
+            try:
+                result = await npa_service.ensure_npa_exists(ticket)
+                results["processed"] += 1
+                if result.get("auto_generated"):
+                    results["generated"] += 1
+            except Exception as e:
+                results["errors"].append({
+                    "ticket_id": ticket.id,
+                    "error": str(e)
+                })
+        
+        sync_db.commit()
+        
+        return results
+    finally:
+        sync_db.close()
+
+
+class AgentChatMessage(BaseModel):
+    role: str  # 'user' or 'assistant'
+    content: str
+
+
+class AgentChatRequest(BaseModel):
+    messages: List[AgentChatMessage]
+    attachments: Optional[List[Dict[str, Any]]] = None  # [{filename, content, type}]
+    log_files: Optional[List[str]] = None  # Array of log file contents as strings
+
+
+@router.post("/tickets/{ticket_id}/agent-chat")
+async def agent_chat_with_ticket(
+    ticket_id: str,
+    request: AgentChatRequest,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Agent chatbot - allows agents to ask questions about tickets with attachments and log files (uses Celery)"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import Ticket, TicketAgentChat
+    from app.tasks.ticket_agent_chat_tasks import agent_chat_task
+    import uuid
+    
+    sync_db = SessionLocal()
+    try:
+        # Verify ticket exists
+        ticket = sync_db.query(Ticket).filter(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        # Get last message (should be user message)
+        messages_list = [msg.model_dump() for msg in request.messages]
+        if not messages_list or messages_list[-1].get("role") != "user":
+            raise HTTPException(status_code=400, detail="Last message must be from user")
+        
+        # Save user message to database
+        user_message = TicketAgentChat(
+            id=str(uuid.uuid4()),
+            ticket_id=ticket_id,
+            tenant_id=current_tenant.id,
+            user_id=current_user.id,
+            role="user",
+            content=messages_list[-1]["content"],
+            attachments=request.attachments,
+            log_files=request.log_files,
+            ai_status="pending"
+        )
+        sync_db.add(user_message)
+        sync_db.commit()
+        sync_db.refresh(user_message)
+        
+        # Trigger Celery task for AI response
+        task = agent_chat_task.delay(
+            ticket_id=ticket_id,
+            tenant_id=current_tenant.id,
+            user_id=current_user.id,
+            user_message_id=user_message.id,
+            messages=messages_list,
+            attachments=request.attachments,
+            log_files=request.log_files
+        )
+        
+        return {
+            "success": True,
+            "user_message_id": user_message.id,
+            "task_id": task.id,
+            "status": "processing"
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        import logging
+        logger = logging.getLogger(__name__)
+        error_msg = str(exc)
+        logger.error("Failed to start agent chat: %s", exc, exc_info=True)
+        # Include more detail in development, but keep generic in production
+        detail_msg = f"Failed to start agent chat: {error_msg}" if logger.level <= logging.DEBUG else "Failed to start agent chat"
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=detail_msg
+        ) from exc
+    finally:
+        sync_db.close()
+
+
+@router.get("/tickets/{ticket_id}/agent-chat")
+async def get_agent_chat_history(
+    ticket_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get chat history for a ticket"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import Ticket, TicketAgentChat
+    from sqlalchemy.exc import ProgrammingError, OperationalError
+    from sqlalchemy import inspect
+    
+    sync_db = SessionLocal()
+    try:
+        # Verify ticket exists
+        ticket = sync_db.query(Ticket).filter(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        # Check if table exists before querying
+        inspector = inspect(sync_db.bind)
+        table_exists = "ticket_agent_chat" in inspector.get_table_names()
+        
+        if not table_exists:
+            # Table doesn't exist yet - return empty array
+            return {
+                "ticket_id": ticket_id,
+                "messages": []
+            }
+        
+        # Get all chat messages
+        messages = sync_db.query(TicketAgentChat).filter(
+            TicketAgentChat.ticket_id == ticket_id,
+            TicketAgentChat.tenant_id == current_tenant.id
+        ).order_by(TicketAgentChat.created_at).all()
+        
+        return {
+            "ticket_id": ticket_id,
+            "messages": [
+                {
+                    "id": msg.id,
+                    "role": msg.role,
+                    "content": msg.content,
+                    "timestamp": msg.created_at.isoformat() if msg.created_at else None,
+                    "ai_status": msg.ai_status,
+                    "ai_model": msg.ai_model,
+                    "ai_task_id": msg.ai_task_id,  # Include task ID for frontend polling
+                    "attachments": msg.attachments,
+                    "log_files": msg.log_files,
+                    "linked_to_npa_id": msg.linked_to_npa_id,
+                    "is_solution": msg.is_solution,
+                    "solution_notes": msg.solution_notes
+                }
+                for msg in messages
+            ]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error loading chat history: {e}", exc_info=True)
+        # Return empty history on error
+        return {
+            "ticket_id": ticket_id,
+            "messages": []
+        }
+    finally:
+        sync_db.close()
+
+
+@router.get("/tickets/{ticket_id}/agent-chat/task/{task_id}")
+async def get_agent_chat_task_status(
+    ticket_id: str,
+    task_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get status of agent chat Celery task"""
+    from celery.result import AsyncResult
+    from app.core.celery_app import celery_app
+    
+    task_result = AsyncResult(task_id, app=celery_app)
+    
+    if task_result.ready():
+        if task_result.successful():
+            return {
+                "status": "completed",
+                "result": task_result.result
+            }
+        else:
+            return {
+                "status": "failed",
+                "error": str(task_result.result)
+            }
+    else:
+        return {
+            "status": "processing",
+            "task_id": task_id
+        }
+
+
+@router.post("/tickets/{ticket_id}/agent-chat/{message_id}/save-to-npa")
+async def save_chat_to_npa(
+    ticket_id: str,
+    message_id: str,
+    npa_id: Optional[str] = Body(None, embed=True),
+    create_new: Optional[bool] = Body(False, embed=True),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Save chat message(s) to an NPA (existing or new)"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import Ticket, TicketAgentChat, NPAHistory
+    from app.services.ticket_npa_service import TicketNPAService
+    
+    sync_db = SessionLocal()
+    try:
+        # Get ticket and message
+        ticket = sync_db.query(Ticket).filter(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        message = sync_db.query(TicketAgentChat).filter(
+            TicketAgentChat.id == message_id,
+            TicketAgentChat.ticket_id == ticket_id,
+            TicketAgentChat.tenant_id == current_tenant.id
+        ).first()
+        
+        if not message:
+            raise HTTPException(status_code=404, detail="Message not found")
+        
+        # Only use the current message content (the AI answer), not the whole conversation
+        message_content = message.content
+        
+        # If create_new is True, skip to creating new NPA
+        if create_new:
+            pass  # Will fall through to create new NPA logic below
+        elif npa_id:
+            # Update existing NPA by ID
+            npa = sync_db.query(NPAHistory).filter(
+                NPAHistory.id == npa_id,
+                NPAHistory.ticket_id == ticket_id,
+                NPAHistory.tenant_id == current_tenant.id
+            ).first()
+            
+            if not npa:
+                raise HTTPException(status_code=404, detail="NPA not found")
+            
+            # Append current AI answer to answers
+            if npa.answers_to_questions:
+                npa.answers_to_questions += f"\n\n--- AI Assistant Answer ---\n{message_content}"
+            else:
+                npa.answers_to_questions = f"--- AI Assistant Answer ---\n{message_content}"
+            
+            # Link this message to NPA
+            message.linked_to_npa_id = npa_id
+            
+            sync_db.commit()
+            
+            return {
+                "success": True,
+                "npa_id": npa_id,
+                "message": "Chat saved to existing NPA"
+            }
+        elif ticket.npa_original_text:
+            # Save to current NPA (find the active NPA history entry)
+            current_npa = sync_db.query(NPAHistory).filter(
+                NPAHistory.ticket_id == ticket_id,
+                NPAHistory.tenant_id == current_tenant.id,
+                NPAHistory.completed_at.is_(None)
+            ).order_by(NPAHistory.created_at.desc()).first()
+            
+            if current_npa:
+                # Append current AI answer to answers
+                if current_npa.answers_to_questions:
+                    current_npa.answers_to_questions += f"\n\n--- AI Assistant Answer ---\n{message_content}"
+                else:
+                    current_npa.answers_to_questions = f"--- AI Assistant Answer ---\n{message_content}"
+                
+                # Link this message to NPA
+                message.linked_to_npa_id = current_npa.id
+                
+                sync_db.commit()
+                
+                return {
+                    "success": True,
+                    "npa_id": current_npa.id,
+                    "message": "Chat saved to current NPA"
+                }
+        
+        # Create new NPA (if create_new=True or no current NPA exists)
+        if create_new or not ticket.npa_original_text:
+            from datetime import datetime, timezone
+            import uuid
+            
+            # Close current NPA if exists
+            if ticket.npa_original_text:
+                # Save current NPA to history and mark as completed
+                current_npa_history = sync_db.query(NPAHistory).filter(
+                    NPAHistory.ticket_id == ticket_id,
+                    NPAHistory.tenant_id == current_tenant.id,
+                    NPAHistory.completed_at.is_(None)
+                ).order_by(NPAHistory.created_at.desc()).first()
+                
+                if current_npa_history:
+                    # Mark existing history entry as completed
+                    current_npa_history.completed_at = datetime.now(timezone.utc)
+                    current_npa_history.completed_by_id = current_user.id
+                    current_npa_history.completion_notes = "Closed when creating new NPA from agent chat"
+                else:
+                    # Create history entry for current NPA before closing
+                    closed_npa_history = NPAHistory(
+                        id=str(uuid.uuid4()),
+                        ticket_id=ticket_id,
+                        tenant_id=current_tenant.id,
+                        npa_original_text=ticket.npa_original_text,
+                        npa_cleaned_text=ticket.npa_cleaned_text,
+                        npa_state=ticket.npa_state if isinstance(ticket.npa_state, str) else (ticket.npa_state.value if hasattr(ticket.npa_state, 'value') else str(ticket.npa_state)) if ticket.npa_state else 'investigation',
+                        assigned_to_id=ticket.next_point_of_action_assigned_to_id,
+                        due_date=ticket.next_point_of_action_due_date,
+                        date_override=ticket.npa_date_override,
+                        exclude_from_sla=ticket.npa_exclude_from_sla,
+                        answers_to_questions=ticket.npa_answers_original_text,
+                        answers_cleaned_text=ticket.npa_answers_cleaned_text,
+                        completed_at=datetime.now(timezone.utc),
+                        completed_by_id=current_user.id,
+                        completion_notes="Closed when creating new NPA from agent chat"
+                    )
+                    sync_db.add(closed_npa_history)
+            
+            # Create new NPA from AI answer
+            npa_service = TicketNPAService(sync_db, current_tenant.id)
+            result = npa_service.update_npa(
+                ticket=ticket,
+                npa=message_content,  # Use only the current AI answer
+                trigger_ai_cleanup=True
+            )
+            
+            # Create a history entry for the new NPA (update_npa saves old to history, but new is only on ticket)
+            new_npa_history = NPAHistory(
+                id=str(uuid.uuid4()),
+                ticket_id=ticket_id,
+                tenant_id=current_tenant.id,
+                npa_original_text=message_content,
+                npa_cleaned_text=result.get("npa"),  # AI-cleaned version if available
+                npa_state=ticket.npa_state if isinstance(ticket.npa_state, str) else (ticket.npa_state.value if hasattr(ticket.npa_state, 'value') else str(ticket.npa_state)) if ticket.npa_state else 'investigation',
+                assigned_to_id=ticket.next_point_of_action_assigned_to_id,
+                due_date=ticket.next_point_of_action_due_date,
+                date_override=ticket.npa_date_override,
+                exclude_from_sla=ticket.npa_exclude_from_sla,
+                answers_to_questions=message_content,  # Store the AI answer as answers
+                ai_cleanup_status=result.get("ai_cleanup_status", "pending"),
+                ai_cleanup_task_id=result.get("ai_cleanup_task_id")
+            )
+            sync_db.add(new_npa_history)
+            sync_db.flush()  # Flush to get the ID
+            
+            new_npa_id = new_npa_history.id
+            
+            # Link this message to new NPA
+            message.linked_to_npa_id = new_npa_id
+            
+            sync_db.commit()
+            
+            return {
+                "success": True,
+                "npa_id": new_npa_id,
+                "message": "New NPA created from AI answer and previous NPA closed"
+            }
+    finally:
+        sync_db.close()
+
+
+@router.post("/tickets/{ticket_id}/agent-chat/{message_id}/mark-solution")
+async def mark_chat_as_solution(
+    ticket_id: str,
+    message_id: str,
+    add_to_kb: Optional[bool] = Body(False, embed=True),
+    close_ticket: Optional[bool] = Body(False, embed=True),
+    notes: Optional[str] = Body(None, embed=True),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Mark a chat message as the solution and perform workflow actions:
+    - Close current NPA
+    - Create new NPA with state='solution' containing the fix
+    - Optionally add to knowledge base
+    - Optionally close the ticket
+    """
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import Ticket, TicketAgentChat, NPAHistory, TicketStatus
+    from app.services.ticket_npa_service import TicketNPAService
+    from app.services.helpdesk_service import HelpdeskService
+    from datetime import datetime, timezone
+    import uuid
+    
+    sync_db = SessionLocal()
+    try:
+        # Get ticket and message
+        ticket = sync_db.query(Ticket).filter(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        message = sync_db.query(TicketAgentChat).filter(
+            TicketAgentChat.id == message_id,
+            TicketAgentChat.ticket_id == ticket_id,
+            TicketAgentChat.tenant_id == current_tenant.id
+        ).first()
+        
+        if not message:
+            raise HTTPException(status_code=404, detail="Message not found")
+        
+        # Unmark other solutions
+        sync_db.query(TicketAgentChat).filter(
+            TicketAgentChat.ticket_id == ticket_id,
+            TicketAgentChat.is_solution == True
+        ).update({"is_solution": False})
+        
+        # Mark this message as solution
+        message.is_solution = True
+        message.solution_notes = notes or "Marked as solution from agent chat"
+        
+        # Close current NPA if exists
+        if ticket.npa_original_text:
+            current_npa_history = sync_db.query(NPAHistory).filter(
+                NPAHistory.ticket_id == ticket_id,
+                NPAHistory.tenant_id == current_tenant.id,
+                NPAHistory.completed_at.is_(None)
+            ).order_by(NPAHistory.created_at.desc()).first()
+            
+            if current_npa_history:
+                # Mark existing history entry as completed
+                current_npa_history.completed_at = datetime.now(timezone.utc)
+                current_npa_history.completed_by_id = current_user.id
+                current_npa_history.completion_notes = "Closed when marking solution"
+            else:
+                # Create history entry for current NPA before closing
+                closed_npa_history = NPAHistory(
+                    id=str(uuid.uuid4()),
+                    ticket_id=ticket_id,
+                    tenant_id=current_tenant.id,
+                    npa_original_text=ticket.npa_original_text,
+                    npa_cleaned_text=ticket.npa_cleaned_text,
+                    npa_state=ticket.npa_state if isinstance(ticket.npa_state, str) else (ticket.npa_state.value if hasattr(ticket.npa_state, 'value') else str(ticket.npa_state)) if ticket.npa_state else 'investigation',
+                    assigned_to_id=ticket.next_point_of_action_assigned_to_id,
+                    due_date=ticket.next_point_of_action_due_date,
+                    date_override=ticket.npa_date_override,
+                    exclude_from_sla=ticket.npa_exclude_from_sla,
+                    answers_to_questions=ticket.npa_answers_original_text,
+                    answers_cleaned_text=ticket.npa_answers_cleaned_text,
+                    completed_at=datetime.now(timezone.utc),
+                    completed_by_id=current_user.id,
+                    completion_notes="Closed when marking solution"
+                )
+                sync_db.add(closed_npa_history)
+        
+        # Create new NPA with state='solution' containing the fix
+        solution_text = f"SOLUTION (Fix):\n{message.content}"
+        if notes:
+            solution_text += f"\n\nNotes: {notes}"
+        
+        npa_service = TicketNPAService(sync_db, current_tenant.id)
+        result = npa_service.update_npa(
+            ticket=ticket,
+            npa=solution_text,
+            npa_state='solution',  # Mark as solution state
+            trigger_ai_cleanup=True
+        )
+        
+        # Create a history entry for the solution NPA
+        solution_npa_history = NPAHistory(
+            id=str(uuid.uuid4()),
+            ticket_id=ticket_id,
+            tenant_id=current_tenant.id,
+            npa_original_text=solution_text,
+            npa_cleaned_text=result.get("npa"),  # AI-cleaned version
+            npa_state='solution',  # Explicitly mark as solution
+            assigned_to_id=ticket.next_point_of_action_assigned_to_id,
+            due_date=ticket.next_point_of_action_due_date,
+            date_override=ticket.npa_date_override,
+            exclude_from_sla=True,  # Solutions don't count toward SLA
+            answers_to_questions=message.content,  # Store the solution
+            ai_cleanup_status=result.get("ai_cleanup_status", "pending"),
+            ai_cleanup_task_id=result.get("ai_cleanup_task_id")
+        )
+        sync_db.add(solution_npa_history)
+        sync_db.flush()  # Flush to get the ID
+        
+        # Link message to solution NPA
+        message.linked_to_npa_id = solution_npa_history.id
+        
+        # Optionally add to knowledge base
+        kb_article_id = None
+        if add_to_kb:
+            try:
+                helpdesk_service = HelpdeskService(sync_db, current_tenant.id)
+                kb_article = helpdesk_service.create_knowledge_base_article(
+                    title=f"Solution: {ticket.subject}",
+                    content=f"**Problem:**\n{ticket.description}\n\n**Solution:**\n{message.content}",
+                    summary=f"Solution for: {ticket.subject}",
+                    category=ticket.ticket_type.value if hasattr(ticket.ticket_type, 'value') else str(ticket.ticket_type),
+                    tags=[ticket.ticket_number, "solution", "agent-chat"],
+                    author_id=current_user.id,
+                    is_published=True,
+                    is_featured=False
+                )
+                kb_article_id = kb_article.id
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error creating knowledge base article: {e}", exc_info=True)
+                # Don't fail the whole operation if KB creation fails
+        
+        # Optionally close the ticket
+        if close_ticket:
+            ticket.status = TicketStatus.RESOLVED
+            ticket.closed_at = datetime.now(timezone.utc)
+            ticket.closed_by_id = current_user.id
+        
+        sync_db.commit()
+        
+        return {
+            "success": True,
+            "message_id": message_id,
+            "npa_id": solution_npa_history.id,
+            "kb_article_id": kb_article_id,
+            "ticket_closed": close_ticket,
+            "message": "Solution marked, NPA created, and actions completed"
+        }
+    finally:
+        sync_db.close()
+
+
+# ============================================================================
+# TICKET TEMPLATES
+# ============================================================================
+
+@router.get("/templates")
+async def list_ticket_templates(
+    category: Optional[str] = Query(None),
+    active_only: bool = Query(True),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """List ticket templates"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import TicketTemplate
+    
+    sync_db = SessionLocal()
+    try:
+        query = sync_db.query(TicketTemplate).filter(
+            TicketTemplate.tenant_id == current_tenant.id
+        )
+        
+        if active_only:
+            query = query.filter(TicketTemplate.is_active == True)
+        
+        if category:
+            query = query.filter(TicketTemplate.category == category)
+        
+        templates = query.order_by(TicketTemplate.name).all()
+        
+        return templates
+    finally:
+        sync_db.close()
+
+
+@router.post("/templates", status_code=status.HTTP_201_CREATED)
+async def create_ticket_template(
+    template_data: TicketTemplateCreate,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Create a new ticket template"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import TicketTemplate
+    import uuid
+    
+    sync_db = SessionLocal()
+    try:
+        template = TicketTemplate(
+            id=str(uuid.uuid4()),
+            tenant_id=current_tenant.id,
+            name=template_data.name,
+            category=template_data.category,
+            subject_template=template_data.subject_template,
+            description_template=template_data.description_template,
+            npa_template=template_data.npa_template,
+            tags=template_data.tags or [],
+            is_active=template_data.is_active,
+            created_by_id=current_user.id
+        )
+        
+        sync_db.add(template)
+        sync_db.commit()
+        sync_db.refresh(template)
+        
+        return template
+    except Exception as e:
+        sync_db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error creating ticket template: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating template: {str(e)}"
+        )
+    finally:
+        sync_db.close()
+
+
+@router.get("/templates/{template_id}")
+async def get_ticket_template(
+    template_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get a ticket template by ID"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import TicketTemplate
+    
+    sync_db = SessionLocal()
+    try:
+        template = sync_db.query(TicketTemplate).filter(
+            TicketTemplate.id == template_id,
+            TicketTemplate.tenant_id == current_tenant.id
+        ).first()
+        
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        return template
+    finally:
+        sync_db.close()
+
+
+@router.put("/templates/{template_id}")
+async def update_ticket_template(
+    template_id: str,
+    template_data: TicketTemplateUpdate,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Update a ticket template"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import TicketTemplate
+    
+    sync_db = SessionLocal()
+    try:
+        template = sync_db.query(TicketTemplate).filter(
+            TicketTemplate.id == template_id,
+            TicketTemplate.tenant_id == current_tenant.id
+        ).first()
+        
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        # Update fields
+        if template_data.name is not None:
+            template.name = template_data.name
+        if template_data.category is not None:
+            template.category = template_data.category
+        if template_data.subject_template is not None:
+            template.subject_template = template_data.subject_template
+        if template_data.description_template is not None:
+            template.description_template = template_data.description_template
+        if template_data.npa_template is not None:
+            template.npa_template = template_data.npa_template
+        if template_data.tags is not None:
+            template.tags = template_data.tags
+        if template_data.is_active is not None:
+            template.is_active = template_data.is_active
+        
+        sync_db.commit()
+        sync_db.refresh(template)
+        
+        return template
+    except HTTPException:
+        raise
+    except Exception as e:
+        sync_db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error updating ticket template: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating template: {str(e)}"
+        )
+    finally:
+        sync_db.close()
+
+
+@router.delete("/templates/{template_id}")
+async def delete_ticket_template(
+    template_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Delete a ticket template"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import TicketTemplate
+    
+    sync_db = SessionLocal()
+    try:
+        template = sync_db.query(TicketTemplate).filter(
+            TicketTemplate.id == template_id,
+            TicketTemplate.tenant_id == current_tenant.id
+        ).first()
+        
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        sync_db.delete(template)
+        sync_db.commit()
+        
+        return {"success": True, "message": "Template deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        sync_db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error deleting ticket template: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting template: {str(e)}"
+        )
+    finally:
+        sync_db.close()
+
+
+@router.post("/tickets/{ticket_id}/apply-template/{template_id}")
+async def apply_ticket_template(
+    ticket_id: str,
+    template_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Apply a template to a ticket"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import Ticket, TicketTemplate
+    
+    sync_db = SessionLocal()
+    try:
+        # Get ticket
+        ticket = sync_db.query(Ticket).filter(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        # Get template
+        template = sync_db.query(TicketTemplate).filter(
+            TicketTemplate.id == template_id,
+            TicketTemplate.tenant_id == current_tenant.id,
+            TicketTemplate.is_active == True
+        ).first()
+        
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        # Apply template with variable substitution
+        def substitute_variables(text: Optional[str]) -> Optional[str]:
+            if not text:
+                return None
+            # Replace common variables
+            result = text
+            result = result.replace("{{customer_name}}", ticket.customer.company_name if ticket.customer else "Customer")
+            result = result.replace("{{ticket_number}}", ticket.ticket_number)
+            result = result.replace("{{ticket_subject}}", ticket.subject)
+            return result
+        
+        # Apply template fields
+        if template.subject_template:
+            ticket.subject = substitute_variables(template.subject_template)
+        if template.description_template:
+            ticket.description = substitute_variables(template.description_template)
+        if template.npa_template:
+            ticket.npa_original_text = substitute_variables(template.npa_template)
+        
+        # Apply tags if template has them
+        if template.tags:
+            existing_tags = ticket.tags or []
+            # Merge tags, avoiding duplicates
+            merged_tags = list(set(existing_tags + template.tags))
+            ticket.tags = merged_tags
+        
+        sync_db.commit()
+        sync_db.refresh(ticket)
+        
+        return {
+            "success": True,
+            "ticket": ticket,
+            "message": "Template applied successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        sync_db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error applying template: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error applying template: {str(e)}"
+        )
+    finally:
+        sync_db.close()
+
+
+# ============================================================================
+# QUICK REPLY TEMPLATES
+# ============================================================================
+
+@router.get("/quick-replies")
+async def list_quick_reply_templates(
+    category: Optional[str] = Query(None),
+    include_shared: bool = Query(True),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """List quick reply templates"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import QuickReplyTemplate
+    
+    sync_db = SessionLocal()
+    try:
+        query = sync_db.query(QuickReplyTemplate).filter(
+            QuickReplyTemplate.tenant_id == current_tenant.id
+        )
+        
+        # Filter by category if provided
+        if category:
+            query = query.filter(QuickReplyTemplate.category == category)
+        
+        # Filter by shared/personal
+        if include_shared:
+            # Show shared templates OR templates created by current user
+            query = query.filter(
+                (QuickReplyTemplate.is_shared == True) |
+                (QuickReplyTemplate.created_by_id == current_user.id)
+            )
+        else:
+            # Only show templates created by current user
+            query = query.filter(QuickReplyTemplate.created_by_id == current_user.id)
+        
+        templates = query.order_by(QuickReplyTemplate.name).all()
+        
+        return templates
+    finally:
+        sync_db.close()
+
+
+@router.post("/quick-replies", status_code=status.HTTP_201_CREATED)
+async def create_quick_reply_template(
+    template_data: QuickReplyTemplateCreate,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Create a new quick reply template"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import QuickReplyTemplate
+    import uuid
+    
+    sync_db = SessionLocal()
+    try:
+        template = QuickReplyTemplate(
+            id=str(uuid.uuid4()),
+            tenant_id=current_tenant.id,
+            name=template_data.name,
+            content=template_data.content,
+            category=template_data.category,
+            is_shared=template_data.is_shared,
+            created_by_id=current_user.id
+        )
+        
+        sync_db.add(template)
+        sync_db.commit()
+        sync_db.refresh(template)
+        
+        return template
+    except Exception as e:
+        sync_db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error creating quick reply template: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating template: {str(e)}"
+        )
+    finally:
+        sync_db.close()
+
+
+@router.get("/quick-replies/{template_id}")
+async def get_quick_reply_template(
+    template_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get a quick reply template by ID"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import QuickReplyTemplate
+    
+    sync_db = SessionLocal()
+    try:
+        template = sync_db.query(QuickReplyTemplate).filter(
+            QuickReplyTemplate.id == template_id,
+            QuickReplyTemplate.tenant_id == current_tenant.id
+        ).first()
+        
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        # Check access: must be shared or created by current user
+        if not template.is_shared and template.created_by_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        return template
+    finally:
+        sync_db.close()
+
+
+@router.put("/quick-replies/{template_id}")
+async def update_quick_reply_template(
+    template_id: str,
+    template_data: QuickReplyTemplateUpdate,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Update a quick reply template"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import QuickReplyTemplate
+    
+    sync_db = SessionLocal()
+    try:
+        template = sync_db.query(QuickReplyTemplate).filter(
+            QuickReplyTemplate.id == template_id,
+            QuickReplyTemplate.tenant_id == current_tenant.id
+        ).first()
+        
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        # Check access: must be created by current user (or admin)
+        if template.created_by_id != current_user.id:
+            raise HTTPException(status_code=403, detail="You can only edit your own templates")
+        
+        # Update fields
+        if template_data.name is not None:
+            template.name = template_data.name
+        if template_data.content is not None:
+            template.content = template_data.content
+        if template_data.category is not None:
+            template.category = template_data.category
+        if template_data.is_shared is not None:
+            template.is_shared = template_data.is_shared
+        
+        sync_db.commit()
+        sync_db.refresh(template)
+        
+        return template
+    except HTTPException:
+        raise
+    except Exception as e:
+        sync_db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error updating quick reply template: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating template: {str(e)}"
+        )
+    finally:
+        sync_db.close()
+
+
+@router.delete("/quick-replies/{template_id}")
+async def delete_quick_reply_template(
+    template_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Delete a quick reply template"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import QuickReplyTemplate
+    
+    sync_db = SessionLocal()
+    try:
+        template = sync_db.query(QuickReplyTemplate).filter(
+            QuickReplyTemplate.id == template_id,
+            QuickReplyTemplate.tenant_id == current_tenant.id
+        ).first()
+        
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        # Check access: must be created by current user (or admin)
+        if template.created_by_id != current_user.id:
+            raise HTTPException(status_code=403, detail="You can only delete your own templates")
+        
+        sync_db.delete(template)
+        sync_db.commit()
+        
+        return {"success": True, "message": "Template deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        sync_db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error deleting quick reply template: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting template: {str(e)}"
+        )
+    finally:
+        sync_db.close()
+
+
+# ============================================================================
+# BULK OPERATIONS
+# ============================================================================
+
+class BulkOperationRequest(BaseModel):
+    ticket_ids: List[str]
+    action: str  # assign, update_status, update_priority, update_tags, close, resolve
+    user_id: Optional[str] = None  # For assign action
+    status: Optional[str] = None  # For update_status action
+    priority: Optional[str] = None  # For update_priority action
+    tags: Optional[List[str]] = None  # For update_tags action
+    add_tags: Optional[List[str]] = None  # Add tags (merge with existing)
+    remove_tags: Optional[List[str]] = None  # Remove tags
+
+
+@router.post("/tickets/bulk-assign")
+async def bulk_assign_tickets(
+    ticket_ids: List[str] = Body(...),
+    user_id: str = Body(...),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Bulk assign tickets to a user"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import Ticket
+    from datetime import datetime, timezone
+    
+    sync_db = SessionLocal()
+    try:
+        # Verify all tickets belong to tenant
+        tickets = sync_db.query(Ticket).filter(
+            Ticket.id.in_(ticket_ids),
+            Ticket.tenant_id == current_tenant.id
+        ).all()
+        
+        if len(tickets) != len(ticket_ids):
+            raise HTTPException(status_code=404, detail="Some tickets not found")
+        
+        # Update all tickets
+        updated_count = 0
+        for ticket in tickets:
+            ticket.assigned_to_id = user_id
+            ticket.assigned_at = datetime.now(timezone.utc)
+            updated_count += 1
+        
+        sync_db.commit()
+        
+        return {
+            "success": True,
+            "updated_count": updated_count,
+            "message": f"Successfully assigned {updated_count} ticket(s)"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        sync_db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error bulk assigning tickets: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error assigning tickets: {str(e)}"
+        )
+    finally:
+        sync_db.close()
+
+
+@router.post("/tickets/bulk-update")
+async def bulk_update_tickets(
+    request: BulkOperationRequest,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Bulk update tickets (status, priority, tags)"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import Ticket, TicketStatus, TicketPriority
+    
+    sync_db = SessionLocal()
+    try:
+        # Verify all tickets belong to tenant
+        tickets = sync_db.query(Ticket).filter(
+            Ticket.id.in_(request.ticket_ids),
+            Ticket.tenant_id == current_tenant.id
+        ).all()
+        
+        if len(tickets) != len(request.ticket_ids):
+            raise HTTPException(status_code=404, detail="Some tickets not found")
+        
+        updated_count = 0
+        for ticket in tickets:
+            updated = False
+            
+            # Update status
+            if request.action == "update_status" and request.status:
+                try:
+                    ticket.status = TicketStatus[request.status.upper()]
+                    updated = True
+                except (KeyError, AttributeError):
+                    pass
+            
+            # Update priority
+            if request.action == "update_priority" and request.priority:
+                try:
+                    ticket.priority = TicketPriority[request.priority.upper()]
+                    updated = True
+                except (KeyError, AttributeError):
+                    pass
+            
+            # Update tags
+            if request.action == "update_tags":
+                if request.tags is not None:
+                    # Replace all tags
+                    ticket.tags = request.tags
+                    updated = True
+                elif request.add_tags:
+                    # Add tags (merge)
+                    existing_tags = ticket.tags or []
+                    merged_tags = list(set(existing_tags + request.add_tags))
+                    ticket.tags = merged_tags
+                    updated = True
+                elif request.remove_tags:
+                    # Remove tags
+                    existing_tags = ticket.tags or []
+                    ticket.tags = [tag for tag in existing_tags if tag not in request.remove_tags]
+                    updated = True
+            
+            if updated:
+                updated_count += 1
+        
+        sync_db.commit()
+        
+        return {
+            "success": True,
+            "updated_count": updated_count,
+            "message": f"Successfully updated {updated_count} ticket(s)"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        sync_db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error bulk updating tickets: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating tickets: {str(e)}"
+        )
+    finally:
+        sync_db.close()
+
+
+@router.post("/tickets/bulk-close")
+async def bulk_close_tickets(
+    ticket_ids: List[str] = Body(...),
+    status: str = Body("closed", embed=True),  # closed or resolved
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Bulk close or resolve tickets"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import Ticket, TicketStatus
+    from datetime import datetime, timezone
+    
+    sync_db = SessionLocal()
+    try:
+        # Verify all tickets belong to tenant
+        tickets = sync_db.query(Ticket).filter(
+            Ticket.id.in_(ticket_ids),
+            Ticket.tenant_id == current_tenant.id
+        ).all()
+        
+        if len(tickets) != len(ticket_ids):
+            raise HTTPException(status_code=404, detail="Some tickets not found")
+        
+        # Determine status
+        target_status = TicketStatus.CLOSED if status.lower() == "closed" else TicketStatus.RESOLVED
+        
+        updated_count = 0
+        for ticket in tickets:
+            ticket.status = target_status
+            ticket.closed_at = datetime.now(timezone.utc)
+            ticket.closed_by_id = current_user.id
+            updated_count += 1
+        
+        sync_db.commit()
+        
+        return {
+            "success": True,
+            "updated_count": updated_count,
+            "message": f"Successfully {status} {updated_count} ticket(s)"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        sync_db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error bulk closing tickets: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error closing tickets: {str(e)}"
+        )
+    finally:
+        sync_db.close()
+
+
+# ============================================================================
+# TICKET MACROS
+# ============================================================================
+
+@router.get("/macros")
+async def list_ticket_macros(
+    include_shared: bool = Query(True),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """List ticket macros"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import TicketMacro
+    
+    sync_db = SessionLocal()
+    try:
+        query = sync_db.query(TicketMacro).filter(
+            TicketMacro.tenant_id == current_tenant.id
+        )
+        
+        # Filter by shared/personal
+        if include_shared:
+            # Show shared macros OR macros created by current user
+            query = query.filter(
+                (TicketMacro.is_shared == True) |
+                (TicketMacro.created_by_id == current_user.id)
+            )
+        else:
+            # Only show macros created by current user
+            query = query.filter(TicketMacro.created_by_id == current_user.id)
+        
+        macros = query.order_by(TicketMacro.name).all()
+        
+        return macros
+    finally:
+        sync_db.close()
+
+
+@router.post("/macros", status_code=status.HTTP_201_CREATED)
+async def create_ticket_macro(
+    macro_data: TicketMacroCreate,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Create a new ticket macro"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import TicketMacro
+    import uuid
+    
+    sync_db = SessionLocal()
+    try:
+        macro = TicketMacro(
+            id=str(uuid.uuid4()),
+            tenant_id=current_tenant.id,
+            name=macro_data.name,
+            description=macro_data.description,
+            actions=macro_data.actions,
+            is_shared=macro_data.is_shared,
+            created_by_id=current_user.id
+        )
+        
+        sync_db.add(macro)
+        sync_db.commit()
+        sync_db.refresh(macro)
+        
+        return macro
+    except Exception as e:
+        sync_db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error creating ticket macro: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating macro: {str(e)}"
+        )
+    finally:
+        sync_db.close()
+
+
+@router.get("/macros/{macro_id}")
+async def get_ticket_macro(
+    macro_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get a ticket macro by ID"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import TicketMacro
+    
+    sync_db = SessionLocal()
+    try:
+        macro = sync_db.query(TicketMacro).filter(
+            TicketMacro.id == macro_id,
+            TicketMacro.tenant_id == current_tenant.id
+        ).first()
+        
+        if not macro:
+            raise HTTPException(status_code=404, detail="Macro not found")
+        
+        # Check access: must be shared or created by current user
+        if not macro.is_shared and macro.created_by_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        return macro
+    finally:
+        sync_db.close()
+
+
+@router.put("/macros/{macro_id}")
+async def update_ticket_macro(
+    macro_id: str,
+    macro_data: TicketMacroUpdate,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Update a ticket macro"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import TicketMacro
+    
+    sync_db = SessionLocal()
+    try:
+        macro = sync_db.query(TicketMacro).filter(
+            TicketMacro.id == macro_id,
+            TicketMacro.tenant_id == current_tenant.id
+        ).first()
+        
+        if not macro:
+            raise HTTPException(status_code=404, detail="Macro not found")
+        
+        # Check access: must be created by current user (or admin)
+        if macro.created_by_id != current_user.id:
+            raise HTTPException(status_code=403, detail="You can only edit your own macros")
+        
+        # Update fields
+        if macro_data.name is not None:
+            macro.name = macro_data.name
+        if macro_data.description is not None:
+            macro.description = macro_data.description
+        if macro_data.actions is not None:
+            macro.actions = macro_data.actions
+        if macro_data.is_shared is not None:
+            macro.is_shared = macro_data.is_shared
+        
+        sync_db.commit()
+        sync_db.refresh(macro)
+        
+        return macro
+    except HTTPException:
+        raise
+    except Exception as e:
+        sync_db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error updating ticket macro: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating macro: {str(e)}"
+        )
+    finally:
+        sync_db.close()
+
+
+@router.delete("/macros/{macro_id}")
+async def delete_ticket_macro(
+    macro_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Delete a ticket macro"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import TicketMacro
+    
+    sync_db = SessionLocal()
+    try:
+        macro = sync_db.query(TicketMacro).filter(
+            TicketMacro.id == macro_id,
+            TicketMacro.tenant_id == current_tenant.id
+        ).first()
+        
+        if not macro:
+            raise HTTPException(status_code=404, detail="Macro not found")
+        
+        # Check access: must be created by current user (or admin)
+        if macro.created_by_id != current_user.id:
+            raise HTTPException(status_code=403, detail="You can only delete your own macros")
+        
+        sync_db.delete(macro)
+        sync_db.commit()
+        
+        return {"success": True, "message": "Macro deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        sync_db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error deleting ticket macro: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting macro: {str(e)}"
+        )
+    finally:
+        sync_db.close()
+
+
+@router.post("/tickets/{ticket_id}/execute-macro/{macro_id}")
+async def execute_ticket_macro(
+    ticket_id: str,
+    macro_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Execute a macro on a ticket"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import Ticket, TicketMacro, TicketStatus, TicketPriority
+    from datetime import datetime, timezone
+    
+    sync_db = SessionLocal()
+    try:
+        # Get ticket
+        ticket = sync_db.query(Ticket).filter(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        # Get macro
+        macro = sync_db.query(TicketMacro).filter(
+            TicketMacro.id == macro_id,
+            TicketMacro.tenant_id == current_tenant.id
+        ).first()
+        
+        if not macro:
+            raise HTTPException(status_code=404, detail="Macro not found")
+        
+        # Check access: must be shared or created by current user
+        if not macro.is_shared and macro.created_by_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Execute actions
+        executed_actions = []
+        errors = []
+        
+        for action in macro.actions:
+            try:
+                action_type = action.get('type')
+                
+                if action_type == 'update_status':
+                    status_value = action.get('value')
+                    if status_value:
+                        ticket.status = TicketStatus[status_value.upper()]
+                        executed_actions.append(f"Status updated to {status_value}")
+                
+                elif action_type == 'update_priority':
+                    priority_value = action.get('value')
+                    if priority_value:
+                        ticket.priority = TicketPriority[priority_value.upper()]
+                        executed_actions.append(f"Priority updated to {priority_value}")
+                
+                elif action_type == 'assign':
+                    user_id = action.get('user_id')
+                    if user_id:
+                        ticket.assigned_to_id = user_id
+                        ticket.assigned_at = datetime.now(timezone.utc)
+                        executed_actions.append(f"Assigned to user {user_id}")
+                
+                elif action_type == 'add_tags':
+                    tags = action.get('tags', [])
+                    if tags:
+                        existing_tags = ticket.tags or []
+                        merged_tags = list(set(existing_tags + tags))
+                        ticket.tags = merged_tags
+                        executed_actions.append(f"Added tags: {', '.join(tags)}")
+                
+                elif action_type == 'add_comment':
+                    comment_text = action.get('text', '')
+                    if comment_text:
+                        from app.models.helpdesk import TicketComment
+                        import uuid
+                        comment = TicketComment(
+                            id=str(uuid.uuid4()),
+                            ticket_id=ticket_id,
+                            tenant_id=current_tenant.id,
+                            user_id=current_user.id,
+                            comment=comment_text,
+                            is_internal=action.get('is_internal', False)
+                        )
+                        sync_db.add(comment)
+                        executed_actions.append("Comment added")
+                
+                elif action_type == 'update_npa':
+                    npa_text = action.get('text', '')
+                    npa_state = action.get('state', 'investigation')
+                    if npa_text:
+                        ticket.npa_original_text = npa_text
+                        ticket.npa_state = npa_state
+                        executed_actions.append("NPA updated")
+                
+            except Exception as e:
+                errors.append(f"Error executing {action_type}: {str(e)}")
+        
+        sync_db.commit()
+        sync_db.refresh(ticket)
+        
+        return {
+            "success": True,
+            "ticket": ticket,
+            "executed_actions": executed_actions,
+            "errors": errors,
+            "message": f"Macro executed: {len(executed_actions)} action(s) completed"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        sync_db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error executing macro: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error executing macro: {str(e)}"
+        )
+    finally:
+        sync_db.close()
+
+
+# ============================================================================
+# TICKET MERGING
+# ============================================================================
+
+@router.post("/tickets/{ticket_id}/merge")
+async def merge_ticket(
+    ticket_id: str,
+    target_ticket_id: str = Body(..., embed=True),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Merge a ticket into another ticket.
+    This will:
+    - Mark the source ticket as merged into the target
+    - Preserve all comments, attachments, and history
+    - Link the tickets together
+    """
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import Ticket, TicketComment, TicketHistory, TicketStatus
+    from datetime import datetime, timezone
+    import uuid
+    
+    sync_db = SessionLocal()
+    try:
+        # Get both tickets
+        source_ticket = sync_db.query(Ticket).filter(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        target_ticket = sync_db.query(Ticket).filter(
+            Ticket.id == target_ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        if not source_ticket:
+            raise HTTPException(status_code=404, detail="Source ticket not found")
+        
+        if not target_ticket:
+            raise HTTPException(status_code=404, detail="Target ticket not found")
+        
+        if source_ticket.id == target_ticket.id:
+            raise HTTPException(status_code=400, detail="Cannot merge ticket into itself")
+        
+        # Check for circular merges
+        if source_ticket.merged_into_ticket_id == target_ticket.id:
+            raise HTTPException(status_code=400, detail="Tickets are already merged")
+        
+        # Check if source is already merged
+        if source_ticket.merged_into_ticket_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Ticket is already merged into ticket {source_ticket.merged_into_ticket_id}"
+            )
+        
+        # Check if target is merged (can't merge into a merged ticket)
+        if target_ticket.merged_into_ticket_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot merge into a ticket that has been merged into another ticket"
+            )
+        
+        # Merge the ticket
+        source_ticket.merged_into_ticket_id = target_ticket.id
+        source_ticket.status = TicketStatus.CLOSED
+        source_ticket.closed_at = datetime.now(timezone.utc)
+        source_ticket.closed_by_id = current_user.id
+        
+        # Add a comment to both tickets about the merge
+        # Comment on source ticket
+        source_comment = TicketComment(
+            id=str(uuid.uuid4()),
+            ticket_id=source_ticket.id,
+            tenant_id=current_tenant.id,
+            user_id=current_user.id,
+            comment=f"This ticket has been merged into ticket {target_ticket.ticket_number}",
+            is_internal=True
+        )
+        sync_db.add(source_comment)
+        
+        # Comment on target ticket
+        target_comment = TicketComment(
+            id=str(uuid.uuid4()),
+            ticket_id=target_ticket.id,
+            tenant_id=current_tenant.id,
+            user_id=current_user.id,
+            comment=f"Ticket {source_ticket.ticket_number} has been merged into this ticket",
+            is_internal=True
+        )
+        sync_db.add(target_comment)
+        
+        # Create history entries
+        source_history = TicketHistory(
+            id=str(uuid.uuid4()),
+            ticket_id=source_ticket.id,
+            tenant_id=current_tenant.id,
+            user_id=current_user.id,
+            action="merged",
+            old_value=None,
+            new_value=f"Merged into {target_ticket.ticket_number}",
+            description=f"Ticket merged into {target_ticket.ticket_number}"
+        )
+        sync_db.add(source_history)
+        
+        target_history = TicketHistory(
+            id=str(uuid.uuid4()),
+            ticket_id=target_ticket.id,
+            tenant_id=current_tenant.id,
+            user_id=current_user.id,
+            action="merge_received",
+            old_value=None,
+            new_value=source_ticket.ticket_number,
+            description=f"Received merge from ticket {source_ticket.ticket_number}"
+        )
+        sync_db.add(target_history)
+        
+        sync_db.commit()
+        sync_db.refresh(source_ticket)
+        sync_db.refresh(target_ticket)
+        
+        return {
+            "success": True,
+            "source_ticket": source_ticket,
+            "target_ticket": target_ticket,
+            "message": f"Ticket {source_ticket.ticket_number} merged into {target_ticket.ticket_number}"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        sync_db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error merging ticket: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error merging ticket: {str(e)}"
+        )
+    finally:
+        sync_db.close()
+
+
+@router.get("/tickets/{ticket_id}/merged-tickets")
+async def get_merged_tickets(
+    ticket_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get tickets that have been merged into this ticket"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import Ticket
+    
+    sync_db = SessionLocal()
+    try:
+        # Verify ticket exists and belongs to tenant
+        ticket = sync_db.query(Ticket).filter(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        # Find all tickets merged into this one
+        merged_tickets = sync_db.query(Ticket).filter(
+            Ticket.merged_into_ticket_id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).all()
+        
+        return {
+            "ticket_id": ticket_id,
+            "merged_tickets": merged_tickets
+        }
+    finally:
+        sync_db.close()
+
+
+# ============================================================================
+# TICKET LINKING
+# ============================================================================
+
+@router.post("/tickets/{ticket_id}/link")
+async def link_ticket(
+    ticket_id: str,
+    target_ticket_id: str = Body(..., embed=True),
+    link_type: str = Body("related", embed=True),
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Link a ticket to another ticket.
+    Link types: 'related', 'duplicate', 'blocks', 'blocked_by', 'follows', 'followed_by'
+    """
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import Ticket, TicketLink
+    import uuid
+    
+    sync_db = SessionLocal()
+    try:
+        # Validate link type
+        valid_link_types = ['related', 'duplicate', 'blocks', 'blocked_by', 'follows', 'followed_by']
+        if link_type not in valid_link_types:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid link type. Must be one of: {', '.join(valid_link_types)}"
+            )
+        
+        # Get both tickets
+        source_ticket = sync_db.query(Ticket).filter(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        target_ticket = sync_db.query(Ticket).filter(
+            Ticket.id == target_ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        if not source_ticket:
+            raise HTTPException(status_code=404, detail="Source ticket not found")
+        
+        if not target_ticket:
+            raise HTTPException(status_code=404, detail="Target ticket not found")
+        
+        if source_ticket.id == target_ticket.id:
+            raise HTTPException(status_code=400, detail="Cannot link ticket to itself")
+        
+        # Check if link already exists
+        existing_link = sync_db.query(TicketLink).filter(
+            TicketLink.source_ticket_id == ticket_id,
+            TicketLink.target_ticket_id == target_ticket_id,
+            TicketLink.link_type == link_type,
+            TicketLink.tenant_id == current_tenant.id
+        ).first()
+        
+        if existing_link:
+            raise HTTPException(status_code=400, detail="Link already exists")
+        
+        # Create the link
+        link = TicketLink(
+            id=str(uuid.uuid4()),
+            tenant_id=current_tenant.id,
+            source_ticket_id=ticket_id,
+            target_ticket_id=target_ticket_id,
+            link_type=link_type,
+            created_by_id=current_user.id
+        )
+        
+        sync_db.add(link)
+        
+        # If linking as 'duplicate', also create reverse link
+        if link_type == 'duplicate':
+            reverse_link = TicketLink(
+                id=str(uuid.uuid4()),
+                tenant_id=current_tenant.id,
+                source_ticket_id=target_ticket_id,
+                target_ticket_id=ticket_id,
+                link_type='duplicate',
+                created_by_id=current_user.id
+            )
+            sync_db.add(reverse_link)
+        
+        # Add history entries
+        from app.models.helpdesk import TicketHistory
+        source_history = TicketHistory(
+            id=str(uuid.uuid4()),
+            ticket_id=ticket_id,
+            tenant_id=current_tenant.id,
+            user_id=current_user.id,
+            action="linked",
+            old_value=None,
+            new_value=f"{link_type}:{target_ticket.ticket_number}",
+            description=f"Linked to ticket {target_ticket.ticket_number} ({link_type})"
+        )
+        sync_db.add(source_history)
+        
+        target_history = TicketHistory(
+            id=str(uuid.uuid4()),
+            ticket_id=target_ticket_id,
+            tenant_id=current_tenant.id,
+            user_id=current_user.id,
+            action="linked_from",
+            old_value=None,
+            new_value=f"{link_type}:{source_ticket.ticket_number}",
+            description=f"Linked from ticket {source_ticket.ticket_number} ({link_type})"
+        )
+        sync_db.add(target_history)
+        
+        sync_db.commit()
+        sync_db.refresh(link)
+        
+        return {
+            "success": True,
+            "link": link,
+            "message": f"Ticket linked successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        sync_db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error linking ticket: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error linking ticket: {str(e)}"
+        )
+    finally:
+        sync_db.close()
+
+
+@router.delete("/tickets/{ticket_id}/link/{link_id}")
+async def unlink_ticket(
+    ticket_id: str,
+    link_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Remove a link between tickets"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import Ticket, TicketLink
+    
+    sync_db = SessionLocal()
+    try:
+        # Verify ticket exists
+        ticket = sync_db.query(Ticket).filter(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        # Get the link
+        link = sync_db.query(TicketLink).filter(
+            TicketLink.id == link_id,
+            TicketLink.tenant_id == current_tenant.id,
+            (TicketLink.source_ticket_id == ticket_id) | (TicketLink.target_ticket_id == ticket_id)
+        ).first()
+        
+        if not link:
+            raise HTTPException(status_code=404, detail="Link not found")
+        
+        # If it's a duplicate link, also remove the reverse link
+        if link.link_type == 'duplicate':
+            reverse_link = sync_db.query(TicketLink).filter(
+                TicketLink.source_ticket_id == link.target_ticket_id,
+                TicketLink.target_ticket_id == link.source_ticket_id,
+                TicketLink.link_type == 'duplicate',
+                TicketLink.tenant_id == current_tenant.id
+            ).first()
+            if reverse_link:
+                sync_db.delete(reverse_link)
+        
+        sync_db.delete(link)
+        sync_db.commit()
+        
+        return {
+            "success": True,
+            "message": "Link removed successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        sync_db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error unlinking ticket: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error unlinking ticket: {str(e)}"
+        )
+    finally:
+        sync_db.close()
+
+
+@router.get("/tickets/{ticket_id}/links")
+async def get_ticket_links(
+    ticket_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get all links for a ticket (both outgoing and incoming)"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import Ticket, TicketLink
+    
+    sync_db = SessionLocal()
+    try:
+        # Verify ticket exists
+        ticket = sync_db.query(Ticket).filter(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        # Get outgoing links (this ticket links to others)
+        outgoing_links = sync_db.query(TicketLink).filter(
+            TicketLink.source_ticket_id == ticket_id,
+            TicketLink.tenant_id == current_tenant.id
+        ).all()
+        
+        # Get incoming links (other tickets link to this one)
+        incoming_links = sync_db.query(TicketLink).filter(
+            TicketLink.target_ticket_id == ticket_id,
+            TicketLink.tenant_id == current_tenant.id
+        ).all()
+        
+        # Load related tickets and serialize to dict
+        outgoing_tickets = []
+        for link in outgoing_links:
+            target_ticket = sync_db.query(Ticket).filter(Ticket.id == link.target_ticket_id).first()
+            if target_ticket:
+                outgoing_tickets.append({
+                    "link": {
+                        "id": link.id,
+                        "source_ticket_id": link.source_ticket_id,
+                        "target_ticket_id": link.target_ticket_id,
+                        "link_type": link.link_type,
+                        "created_by_id": link.created_by_id,
+                        "created_at": link.created_at.isoformat() if link.created_at else None
+                    },
+                    "ticket": {
+                        "id": target_ticket.id,
+                        "ticket_number": target_ticket.ticket_number,
+                        "subject": target_ticket.subject,
+                        "status": target_ticket.status.value if target_ticket.status else None,
+                        "priority": target_ticket.priority.value if target_ticket.priority else None,
+                        "created_at": target_ticket.created_at.isoformat() if target_ticket.created_at else None
+                    }
+                })
+        
+        incoming_tickets = []
+        for link in incoming_links:
+            source_ticket = sync_db.query(Ticket).filter(Ticket.id == link.source_ticket_id).first()
+            if source_ticket:
+                incoming_tickets.append({
+                    "link": {
+                        "id": link.id,
+                        "source_ticket_id": link.source_ticket_id,
+                        "target_ticket_id": link.target_ticket_id,
+                        "link_type": link.link_type,
+                        "created_by_id": link.created_by_id,
+                        "created_at": link.created_at.isoformat() if link.created_at else None
+                    },
+                    "ticket": {
+                        "id": source_ticket.id,
+                        "ticket_number": source_ticket.ticket_number,
+                        "subject": source_ticket.subject,
+                        "status": source_ticket.status.value if source_ticket.status else None,
+                        "priority": source_ticket.priority.value if source_ticket.priority else None,
+                        "created_at": source_ticket.created_at.isoformat() if source_ticket.created_at else None
+                    }
+                })
+        
+        return {
+            "ticket_id": ticket_id,
+            "outgoing_links": outgoing_tickets,
+            "incoming_links": incoming_tickets
+        }
+    finally:
+        sync_db.close()
+
+
+# ============================================================================
+# TICKET TIME TRACKING
+# ============================================================================
+
+@router.get("/tickets/{ticket_id}/time-entries")
+async def get_ticket_time_entries(
+    ticket_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Get all time entries for a ticket"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import Ticket, TicketTimeEntry
+    
+    sync_db = SessionLocal()
+    try:
+        # Verify ticket exists
+        ticket = sync_db.query(Ticket).filter(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        # Get time entries with user information
+        from app.models.user import User
+        time_entries = sync_db.query(TicketTimeEntry).join(
+            User, TicketTimeEntry.user_id == User.id
+        ).filter(
+            TicketTimeEntry.ticket_id == ticket_id,
+            TicketTimeEntry.tenant_id == current_tenant.id
+        ).order_by(TicketTimeEntry.created_at.desc()).all()
+        
+        # Convert to dicts with user info
+        entries_list = []
+        for entry in time_entries:
+            entry_dict = {
+                "id": entry.id,
+                "ticket_id": entry.ticket_id,
+                "user_id": entry.user_id,
+                "user_name": entry.user.full_name if entry.user else None,
+                "description": entry.description,
+                "hours": entry.hours,
+                "billable": entry.billable,
+                "activity_type": entry.activity_type,
+                "started_at": entry.started_at.isoformat() if entry.started_at else None,
+                "ended_at": entry.ended_at.isoformat() if entry.ended_at else None,
+                "created_at": entry.created_at.isoformat() if entry.created_at else None,
+                "updated_at": entry.updated_at.isoformat() if entry.updated_at else None
+            }
+            entries_list.append(entry_dict)
+        
+        # Calculate totals
+        total_hours = sum(float(entry.hours) for entry in time_entries)
+        billable_hours = sum(float(entry.hours) for entry in time_entries if entry.billable)
+        
+        return {
+            "ticket_id": ticket_id,
+            "time_entries": entries_list,
+            "total_hours": total_hours,
+            "billable_hours": billable_hours
+        }
+    finally:
+        sync_db.close()
+
+
+@router.post("/tickets/{ticket_id}/time-entries", status_code=status.HTTP_201_CREATED)
+async def create_time_entry(
+    ticket_id: str,
+    time_entry_data: TicketTimeEntryCreate,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Create a new time entry for a ticket"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import Ticket, TicketTimeEntry, TicketHistory
+    from datetime import datetime, timezone
+    import uuid
+    
+    sync_db = SessionLocal()
+    try:
+        # Verify ticket exists
+        ticket = sync_db.query(Ticket).filter(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        # Parse dates if provided
+        started_at = None
+        ended_at = None
+        if time_entry_data.started_at:
+            started_at = datetime.fromisoformat(time_entry_data.started_at.replace('Z', '+00:00'))
+        if time_entry_data.ended_at:
+            ended_at = datetime.fromisoformat(time_entry_data.ended_at.replace('Z', '+00:00'))
+        
+        # Create time entry
+        time_entry = TicketTimeEntry(
+            id=str(uuid.uuid4()),
+            tenant_id=current_tenant.id,
+            ticket_id=ticket_id,
+            user_id=current_user.id,
+            description=time_entry_data.description,
+            hours=str(time_entry_data.hours),
+            billable=time_entry_data.billable,
+            activity_type=time_entry_data.activity_type,
+            started_at=started_at,
+            ended_at=ended_at
+        )
+        
+        sync_db.add(time_entry)
+        
+        # Add history entry
+        history = TicketHistory(
+            id=str(uuid.uuid4()),
+            ticket_id=ticket_id,
+            tenant_id=current_tenant.id,
+            user_id=current_user.id,
+            action="time_logged",
+            old_value=None,
+            new_value=f"{time_entry_data.hours}h",
+            description=f"Logged {time_entry_data.hours} hours"
+        )
+        sync_db.add(history)
+        
+        sync_db.commit()
+        sync_db.refresh(time_entry)
+        
+        return time_entry
+    except HTTPException:
+        raise
+    except Exception as e:
+        sync_db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error creating time entry: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating time entry: {str(e)}"
+        )
+    finally:
+        sync_db.close()
+
+
+@router.put("/tickets/{ticket_id}/time-entries/{entry_id}")
+async def update_time_entry(
+    ticket_id: str,
+    entry_id: str,
+    time_entry_data: TicketTimeEntryUpdate,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Update a time entry"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import Ticket, TicketTimeEntry
+    from datetime import datetime
+    
+    sync_db = SessionLocal()
+    try:
+        # Verify ticket exists
+        ticket = sync_db.query(Ticket).filter(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        # Get time entry
+        time_entry = sync_db.query(TicketTimeEntry).filter(
+            TicketTimeEntry.id == entry_id,
+            TicketTimeEntry.ticket_id == ticket_id,
+            TicketTimeEntry.tenant_id == current_tenant.id
+        ).first()
+        
+        if not time_entry:
+            raise HTTPException(status_code=404, detail="Time entry not found")
+        
+        # Check permission: only the creator can edit
+        if time_entry.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="You can only edit your own time entries")
+        
+        # Update fields
+        if time_entry_data.description is not None:
+            time_entry.description = time_entry_data.description
+        if time_entry_data.hours is not None:
+            time_entry.hours = str(time_entry_data.hours)
+        if time_entry_data.billable is not None:
+            time_entry.billable = time_entry_data.billable
+        if time_entry_data.activity_type is not None:
+            time_entry.activity_type = time_entry_data.activity_type
+        if time_entry_data.started_at is not None:
+            time_entry.started_at = datetime.fromisoformat(time_entry_data.started_at.replace('Z', '+00:00'))
+        if time_entry_data.ended_at is not None:
+            time_entry.ended_at = datetime.fromisoformat(time_entry_data.ended_at.replace('Z', '+00:00'))
+        
+        sync_db.commit()
+        sync_db.refresh(time_entry)
+        
+        return time_entry
+    except HTTPException:
+        raise
+    except Exception as e:
+        sync_db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error updating time entry: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating time entry: {str(e)}"
+        )
+    finally:
+        sync_db.close()
+
+
+@router.delete("/tickets/{ticket_id}/time-entries/{entry_id}")
+async def delete_time_entry(
+    ticket_id: str,
+    entry_id: str,
+    current_user: User = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Delete a time entry"""
+    from app.core.database import SessionLocal
+    from app.models.helpdesk import Ticket, TicketTimeEntry
+    
+    sync_db = SessionLocal()
+    try:
+        # Verify ticket exists
+        ticket = sync_db.query(Ticket).filter(
+            Ticket.id == ticket_id,
+            Ticket.tenant_id == current_tenant.id
+        ).first()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        # Get time entry
+        time_entry = sync_db.query(TicketTimeEntry).filter(
+            TicketTimeEntry.id == entry_id,
+            TicketTimeEntry.ticket_id == ticket_id,
+            TicketTimeEntry.tenant_id == current_tenant.id
+        ).first()
+        
+        if not time_entry:
+            raise HTTPException(status_code=404, detail="Time entry not found")
+        
+        # Check permission: only the creator can delete
+        if time_entry.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="You can only delete your own time entries")
+        
+        sync_db.delete(time_entry)
+        sync_db.commit()
+        
+        return {"success": True, "message": "Time entry deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        sync_db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error deleting time entry: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting time entry: {str(e)}"
+        )
+    finally:
+        sync_db.close()
+
