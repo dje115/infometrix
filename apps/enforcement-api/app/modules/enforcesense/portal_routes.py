@@ -70,18 +70,30 @@ async def _get_session_from_redis(session_id: str) -> Optional[dict]:
 
 
 async def _store_session_in_redis(session_id: str, session_data: dict, ttl: int = SESSION_TTL_SECONDS):
-    """Store portal session in Redis"""
+    """Store portal session in Redis with token index for fast lookup"""
     try:
         redis_client = await get_redis()
         if not redis_client:
             logger.warning("Redis not available, session will not persist")
             return False
         
+        token = session_data.get("token")
+        
+        # Store session data
         await redis_client.setex(
             f"portal_session:{session_id}",
             ttl,
             json.dumps(session_data)
         )
+        
+        # Store token -> session_id mapping for fast lookup
+        if token:
+            await redis_client.setex(
+                f"portal_token:{token}",
+                ttl,
+                session_id
+            )
+        
         return True
     except Exception as e:
         logger.error(f"Error storing session in Redis: {e}")
@@ -204,30 +216,30 @@ async def get_portal_case(
     
     token = authorization.replace("Bearer ", "")
     
-    # Find session by token in Redis
-    # We need to search all sessions - in production, consider storing token->session_id mapping
+    # Find session by token using token index
     session = None
     try:
         redis_client = await get_redis()
         if redis_client:
-            # Get all session keys (in production, use a token index)
-            # For now, we'll search - in production, maintain token->session_id mapping
-            keys = await redis_client.keys("portal_session:*")
-            for key in keys:
-                session_data = await redis_client.get(key)
+            # Get session_id from token index
+            session_id = await redis_client.get(f"portal_token:{token}")
+            if session_id:
+                # Get session data
+                session_data = await redis_client.get(f"portal_session:{session_id}")
                 if session_data:
                     sess = json.loads(session_data)
-                    if sess.get("token") == token:
-                        # Check expiry
-                        expires_at = datetime.fromisoformat(sess["expires_at"])
-                        if datetime.utcnow() > expires_at:
-                            logger.info(f"Portal session expired: {sess.get('session_id')}")
-                            raise HTTPException(
-                                status_code=status.HTTP_401_UNAUTHORIZED,
-                                detail="Portal session expired"
-                            )
-                        session = sess
-                        break
+                    # Check expiry
+                    expires_at = datetime.fromisoformat(sess["expires_at"])
+                    if datetime.utcnow() > expires_at:
+                        logger.info(f"Portal session expired: {session_id}")
+                        # Clean up expired session
+                        await redis_client.delete(f"portal_session:{session_id}")
+                        await redis_client.delete(f"portal_token:{token}")
+                        raise HTTPException(
+                            status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Portal session expired"
+                        )
+                    session = sess
     except HTTPException:
         raise
     except Exception as e:
