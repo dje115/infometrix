@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     DATABASE_URL: Optional[str] = None
     
     # Redis
-    REDIS_URL: Optional[str] = None
+    REDIS_URL: Optional[str] = "redis://redis:6379/0"
     
     # Security
     SECRET_KEY: str = "change-me-in-production"

@@ -9,6 +9,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import uvicorn
 import os
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Import EnforceSense module
 from app.modules.enforcesense.module import EnforceSenseModule
@@ -36,10 +44,13 @@ app.add_middleware(
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
     # Startup
-    print("Starting Enforcement API...")
+    logger.info("Starting Enforcement API...")
+    
+    # Initialize Redis
+    from app.core.redis import init_redis, close_redis
+    await init_redis()
     
     # TODO: Initialize database connection
-    # TODO: Initialize Redis if needed
     
     # Register EnforceSense module routes
     app.include_router(enforcesense_router, prefix="/api/v1")
@@ -47,10 +58,13 @@ async def lifespan(app: FastAPI):
     # Register portal routes
     app.include_router(portal_router, prefix="/api/v1")
     
+    logger.info("Enforcement API started successfully")
+    
     yield
     
     # Shutdown
-    print("Shutting down Enforcement API...")
+    await close_redis()
+    logger.info("Shutting down Enforcement API...")
 
 
 app.router.lifespan_context = lifespan
