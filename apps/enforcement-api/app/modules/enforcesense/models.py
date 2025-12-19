@@ -94,6 +94,68 @@ class TransactionType(enum.Enum):
     WRITE_OFF = "write_off"
 
 
+class LedgerEntryType(enum.Enum):
+    """Ledger entry type - single source of truth for all financial movements"""
+    DEBTOR_PAYMENT = "DEBTOR_PAYMENT"
+    CLIENT_PAYOUT = "CLIENT_PAYOUT"
+    FEE_EARNED = "FEE_EARNED"
+    DISBURSEMENT = "DISBURSEMENT"
+    REFUND = "REFUND"
+    ADJUSTMENT = "ADJUSTMENT"
+    INTEREST_ACCRUED = "INTEREST_ACCRUED"
+    FEE_CHARGED = "FEE_CHARGED"
+
+
+class LedgerEntryStatus(enum.Enum):
+    """Ledger entry status"""
+    PENDING = "PENDING"
+    CLEARED = "CLEARED"
+    REVERSED = "REVERSED"
+
+
+class PaymentAllocationMethod(enum.Enum):
+    """Payment allocation method"""
+    AUTOMATIC = "AUTOMATIC"
+    MANUAL = "MANUAL"
+    RULE_BASED = "RULE_BASED"
+
+
+class FeeScheduleScope(enum.Enum):
+    """Fee schedule scope"""
+    TENANT_DEFAULT = "TENANT_DEFAULT"
+    CLIENT_SPECIFIC = "CLIENT_SPECIFIC"
+    CASE_OVERRIDE = "CASE_OVERRIDE"
+
+
+class FeeType(enum.Enum):
+    """Fee calculation type"""
+    PERCENTAGE = "PERCENTAGE"
+    FIXED = "FIXED"
+    TIERED = "TIERED"
+    SUCCESS_FEE_ONLY = "SUCCESS_FEE_ONLY"
+
+
+class FeeCalculationBase(enum.Enum):
+    """Fee calculation base"""
+    PRINCIPAL = "PRINCIPAL"
+    TOTAL_DEBT = "TOTAL_DEBT"
+    RECOVERED_AMOUNT = "RECOVERED_AMOUNT"
+
+
+class FeeWhoPays(enum.Enum):
+    """Who pays the fee"""
+    CLIENT = "CLIENT"
+    DEBTOR = "DEBTOR"
+
+
+class FeeTriggerEvent(enum.Enum):
+    """Fee trigger event"""
+    ON_RECOVERY = "ON_RECOVERY"
+    ON_CASE_STAGE = "ON_CASE_STAGE"
+    ON_CLOSURE = "ON_CLOSURE"
+    ON_INSTRUCTION = "ON_INSTRUCTION"
+
+
 ENUM_KWARGS = {
     "values_callable": lambda enum_cls: [member.value for member in enum_cls]
 }
@@ -284,6 +346,11 @@ class EnforcementCase(Base):
     # New relationships (Phase 1)
     case_debts = relationship("CaseDebts", back_populates="case", cascade="all, delete-orphan")
     party_roles = relationship("PartyRole", back_populates="case", cascade="all, delete-orphan")
+    
+    # Financial relationships
+    ledger_entries = relationship("LedgerEntry", back_populates="case", cascade="all, delete-orphan")
+    payment_allocations = relationship("PaymentAllocation", back_populates="case", cascade="all, delete-orphan")
+    fee_schedules = relationship("FeeSchedule", back_populates="case", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<EnforcementCase {self.case_reference} - {self.status.value}>"
