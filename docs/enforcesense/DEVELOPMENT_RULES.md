@@ -6,6 +6,8 @@
 
 ## Critical Rules for All EnforceSense Development
 
+**CRITICAL**: Fee transparency is legally required in UK debt recovery/enforcement. See `docs/enforcesense/FEE_TRANSPARENCY.md` for complete fee visibility rules.
+
 ### 1. Financial Model Rules (MANDATORY)
 
 **CRITICAL**: All financial development MUST follow the financial model specification.

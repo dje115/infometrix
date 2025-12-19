@@ -13,8 +13,11 @@ This document defines the end-to-end financial model for EnforceSense that suppo
 - Fee structures
 - Complete audit trail
 - Regulatory compliance
+- **Fee transparency (UK legal requirement)**
 
 **CRITICAL**: The Ledger is the single source of truth for all financial reporting. All balances are derived from ledger entries, never stored directly.
+
+**CRITICAL**: Fee transparency is legally required in UK debt recovery/enforcement. See `docs/enforcesense/FEE_TRANSPARENCY.md` for complete fee visibility rules.
 
 ## Five-Layer Architecture
 

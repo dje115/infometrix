@@ -421,7 +421,8 @@ Everything else can be added in later phases.
 11. `ledger_entries` (CRITICAL: single source of truth for all financial movements)
 12. `payment_allocations` (payment splitting across debts and fees)
 13. `fee_schedules` (fee structure definitions)
-14. `fee_rules` (individual fee calculation rules)
+14. `fee_rules` (individual fee calculation rules with transparency flags)
+15. `fee_challenges` (debtor-initiated fee challenge workflow)
 
 ### Modified Tables
 1. `enforcement_clients` (add `customer_id` FK)

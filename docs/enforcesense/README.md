@@ -54,6 +54,34 @@ This directory contains all EnforceSense module documentation. These documents a
 - Reporting
 - Any code that touches money
 
+### 2a. Fee Transparency & Compliance ⚠️ CRITICAL (UK Legal Requirement)
+**File**: `FEE_TRANSPARENCY.md`
+
+**Purpose**: Defines fee transparency requirements (legally required in UK)
+
+**Key Topics**:
+- When fees must be transparent (debtor-facing vs client-facing)
+- Fee classification model (is_debtor_visible, legal_basis)
+- Permission matrix (who can see/do what)
+- Debtor and client statements
+- Fee challenge workflow
+- Vulnerability and compliance automation
+- UK legal references
+
+**CRITICAL RULES**:
+- If fee affects debtor balance, must be transparent to debtor
+- If fee affects client payout, must be transparent to client
+- All debtor-visible fees must have legal basis
+- Fee challenges must be supported
+- Vulnerable debtors require compliance approval for fees
+
+**When to Reference**: 
+- **ALL fee-related development**
+- Debtor portal development
+- Client statement development
+- Fee challenge workflow
+- Compliance automation
+
 ### 3. Development Rules
 **File**: `DEVELOPMENT_RULES.md`
 
@@ -134,6 +162,7 @@ This directory contains all EnforceSense module documentation. These documents a
 |----------|--------|----------|
 | Entity Tree Spec | ✅ Complete | High |
 | Financial Model | ✅ Complete | **CRITICAL** |
+| Fee Transparency | ✅ Complete | **CRITICAL** (UK Legal) |
 | Development Rules | ✅ Complete | **CRITICAL** |
 | Party Flags Spec | ✅ Complete | High |
 | Migration Plan | ✅ Complete | Medium |
@@ -179,6 +208,9 @@ This directory contains all EnforceSense module documentation. These documents a
 - **ALWAYS** create ledger entry for every financial movement
 - **ALWAYS** validate allocations
 - **ALWAYS** use FeeSchedule rules for fees
+- **ALWAYS** set fee visibility flags correctly (UK legal requirement)
+- **ALWAYS** include legal basis for debtor-visible fees
+- **ALWAYS** filter debtor statements by is_debtor_visible
 
 ### ⚠️ Model Development
 - **ALWAYS** store flags at Party level
