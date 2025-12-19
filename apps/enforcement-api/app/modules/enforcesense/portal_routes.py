@@ -15,7 +15,7 @@ import secrets
 import uuid
 
 from app.core.database import get_async_db
-from app.modules.enforcesense.models import Case, DebtorParty
+from app.modules.enforcesense.models import EnforcementCase as Case, Debtor
 from app.modules.enforcesense.portal_models import PortalSession
 
 router = APIRouter(prefix="/portal", tags=["portal"])

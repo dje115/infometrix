@@ -6,6 +6,8 @@ Uses shared auth library from packages/shared for JWT validation and tenant reso
 """
 
 import sys
+import os
+import importlib
 from pathlib import Path
 from fastapi import Depends, HTTPException, status, Request, Cookie
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -13,8 +15,64 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional
 
+# IMPORTANT: Import backend models BEFORE importing from app.core
+# This prevents namespace conflicts with the enforcement-api's 'app' module
+
+# Determine backend path
+backend_path = None
+docker_path_str = "/backend/app/models"
+local_path = Path(__file__).parent.parent.parent.parent / "backend" / "app" / "models"
+
+if os.path.exists(docker_path_str):
+    backend_path = Path("/backend")
+elif local_path.exists():
+    backend_path = Path(__file__).parent.parent.parent.parent / "backend"
+else:
+    raise ImportError("Cannot find backend directory. Expected /backend (Docker) or ../../backend (local)")
+
+# Add backend to sys.path and import models BEFORE any 'app' imports
+if str(backend_path) not in sys.path:
+    sys.path.insert(0, str(backend_path))
+
+# Import enforcement-api modules FIRST (before clearing cache)
 from app.core.config import settings
 from app.core.database import get_async_db
+
+# Import backend models - ensure backend is in sys.path first
+if str(backend_path) not in sys.path:
+    sys.path.insert(0, str(backend_path))
+
+# Clear only app.models.* modules to force import from /backend
+# We keep 'app' and 'app.core' from enforcement-api
+modules_to_remove = [key for key in sys.modules.keys() if key.startswith('app.models')]
+for module_name in modules_to_remove:
+    del sys.modules[module_name]
+
+# Import parent packages first to make relative imports work
+# Import app package (will use backend's app since /backend is first in sys.path)
+# But we need to be careful - we want backend's app.models, not enforcement-api's
+# So we temporarily remove enforcement-api's app from cache
+enforcement_app = sys.modules.get('app')
+if enforcement_app and hasattr(enforcement_app, '__file__') and enforcement_app.__file__ and '/app/app/__init__' in enforcement_app.__file__:
+    del sys.modules['app']
+
+# Now import from backend
+try:
+    # Import app package (from /backend)
+    import app
+    # Import app.models package (from /backend)
+    import app.models
+    # Now import tenant module
+    from app.models.tenant import User, Tenant
+except ImportError as e:
+    # Restore enforcement-api's app if import failed
+    if enforcement_app:
+        sys.modules['app'] = enforcement_app
+    raise ImportError(
+        f"Failed to import User and Tenant from backend at {backend_path}. "
+        f"Error: {e}. "
+        f"sys.path: {sys.path[:3]}"
+    )
 
 # Add packages/shared to path for imports
 shared_path = Path(__file__).parent.parent.parent.parent / "packages" / "shared"
@@ -23,26 +81,6 @@ if str(shared_path) not in sys.path:
 
 from auth.jwt import verify_token
 from auth.tenant import validate_tenant_access
-
-# Import models (shared database)
-# Note: We import from backend models since we share the database
-# In Docker, the backend is mounted at /backend (see docker-compose.yml)
-# For local dev, it's at ../../backend relative to this file
-import os
-
-# Try Docker path first, then local dev path
-backend_path = None
-if os.path.exists("/backend/app/models"):
-    backend_path = Path("/backend")
-elif os.path.exists(str(Path(__file__).parent.parent.parent.parent / "backend" / "app" / "models")):
-    backend_path = Path(__file__).parent.parent.parent.parent / "backend"
-else:
-    raise ImportError("Cannot find backend directory. Expected /backend (Docker) or ../../backend (local)")
-
-if str(backend_path) not in sys.path:
-    sys.path.insert(0, str(backend_path))
-
-from app.models.tenant import User, Tenant
 
 # Security - HTTPBearer for Authorization header (backward compatibility)
 security = HTTPBearer(auto_error=False)
