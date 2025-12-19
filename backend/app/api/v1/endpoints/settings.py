@@ -25,6 +25,14 @@ from app.core.api_keys import get_api_keys
 router = APIRouter()
 
 
+class TenantInfoResponse(BaseModel):
+    id: str
+    name: str
+    slug: str
+    enabled_modules: List[str]
+    feature_flags: dict
+
+
 class APITestResponse(BaseModel):
     success: bool
     message: str

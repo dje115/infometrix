@@ -86,6 +86,10 @@ class Tenant(Base, TimestampMixin):
     # Feature flags for module control
     feature_flags = Column(JSON, default=dict)  # JSONB in database, dict in Python
     
+    # Enabled modules (list of module IDs that are enabled for this tenant)
+    # Defaults to ["crm", "helpdesk"] for existing tenants
+    enabled_modules = Column(JSON, default=lambda: ["crm", "helpdesk"])  # JSONB in database, list in Python
+    
     # Billing
     plan = Column(String(50), default="trial")
     billing_email = Column(String(255), nullable=True)

@@ -154,6 +154,36 @@ async def init_db():
     # Seed AI prompts (idempotent - safe to run multiple times)
     await seed_ai_prompts_on_init()
     
+    # Run enabled_modules migration if needed
+    try:
+        with engine.connect() as conn:
+            # Check if column exists
+            result = conn.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'tenants' 
+                AND column_name = 'enabled_modules'
+            """))
+            column_exists = result.fetchone() is not None
+            
+            if not column_exists:
+                print("⚠️  Adding enabled_modules column to tenants table...")
+                conn.execute(text("""
+                    ALTER TABLE tenants 
+                    ADD COLUMN enabled_modules JSONB DEFAULT '["crm", "helpdesk"]'::jsonb
+                """))
+                conn.execute(text("""
+                    UPDATE tenants 
+                    SET enabled_modules = '["crm", "helpdesk"]'::jsonb 
+                    WHERE enabled_modules IS NULL
+                """))
+                conn.commit()
+                print("✅ enabled_modules column added successfully")
+            else:
+                print("✅ enabled_modules column already exists")
+    except Exception as migration_e:
+        print(f"⚠️  Warning: Could not add enabled_modules column: {migration_e}")
+    
     print("✅ Database initialized successfully")
 
 

@@ -57,6 +57,7 @@ import OnboardingTooltips from './OnboardingTooltips';
 import VersionDisplay from './VersionDisplay';
 import { settingsAPI } from '../services/api';
 import { CORE_NAVIGATION_GROUPS, MenuGroup } from '../types/modules';
+import ModuleSwitcher from './ModuleSwitcher';
 
 const drawerWidth = 240;
 
@@ -71,6 +72,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [showOnboardingTooltips, setShowOnboardingTooltips] = useState(false);
+  const [enabledModules, setEnabledModules] = useState<string[]>(['crm', 'helpdesk']);
+  const [featureFlags, setFeatureFlags] = useState<Record<string, boolean>>({});
 
   const user = JSON.parse(localStorage.getItem('user') || '{}');
 
@@ -113,6 +116,34 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       console.error('Failed to check AI analysis status:', error);
     }
   };
+
+  // Fetch tenant module configuration
+  useEffect(() => {
+    const fetchTenantConfig = async () => {
+      try {
+        // Try to get tenant info from user object or API
+        const tenantResponse = await settingsAPI.get('/tenant');
+        const tenant = tenantResponse.data;
+        
+        if (tenant) {
+          // Get enabled modules (default to ["crm", "helpdesk"] if not set)
+          const modules = tenant.enabled_modules || ['crm', 'helpdesk'];
+          setEnabledModules(modules);
+          
+          // Get feature flags
+          const flags = tenant.feature_flags || {};
+          setFeatureFlags(flags);
+        }
+      } catch (error) {
+        console.error('Failed to fetch tenant config:', error);
+        // Use defaults on error
+        setEnabledModules(['crm', 'helpdesk']);
+        setFeatureFlags({});
+      }
+    };
+    
+    fetchTenantConfig();
+  }, []);
 
   // Check on component mount and when user changes
   useEffect(() => {
@@ -162,12 +193,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   // Get user info for permission checks
   const isAdmin = user.role === 'super_admin' || user.role === 'admin' || user.role === 'tenant_admin';
   
-  // For now, assume all feature flags are enabled (can be enhanced later to check tenant feature flags)
-  const featureFlags: { [key: string]: boolean } = {
-    QUOTING_ENABLED: true,
-    HELPDESK_ENABLED: true,
-    ENFORCESENSE_ENABLED: false, // Can be enabled when module is ready
-  };
+  // Use feature flags from tenant config (fetched above)
 
   // Filter navigation groups by feature flags and permissions
   const filteredGroups = CORE_NAVIGATION_GROUPS.filter((group: MenuGroup) => {
