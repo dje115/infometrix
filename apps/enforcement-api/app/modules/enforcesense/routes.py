@@ -6,6 +6,12 @@ Core Domain Model:
 - Debtor: Real-world person OR legal entity that owes money
 - Client: Creditor or instructing organisation
 - Case: Single enforcement instruction linking ONE Debtor to ONE Client
+
+CRITICAL FINANCIAL RULES:
+- Ledger is single source of truth for all financial movements
+- All balances are derived from ledger entries, never stored directly
+- See: docs/enforcesense/FINANCIAL_MODEL.md for complete specification
+- See: docs/enforcesense/DEVELOPMENT_RULES.md for development rules
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
