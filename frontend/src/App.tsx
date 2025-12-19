@@ -61,6 +61,11 @@ const KnowledgeBase = lazy(() => import('./modules/helpdesk/pages/KnowledgeBase'
 const TicketTemplates = lazy(() => import('./modules/helpdesk/pages/TicketTemplates'));
 const TicketMacros = lazy(() => import('./modules/helpdesk/pages/TicketMacros'));
 const Compliance = lazy(() => import('./pages/Compliance'));
+const EnforceSenseDashboard = lazy(() => import('./modules/enforcesense/pages/EnforceSenseDashboard'));
+const EnforceSenseCases = lazy(() => import('./modules/enforcesense/pages/Cases'));
+const EnforceSenseCaseDetail = lazy(() => import('./modules/enforcesense/pages/CaseDetail'));
+const DebtorPortalLogin = lazy(() => import('./pages/DebtorPortalLogin'));
+const DebtorPortalCases = lazy(() => import('./pages/DebtorPortalCases'));
 
 // Loading fallback component
 const LoadingFallback = () => (
@@ -501,6 +506,39 @@ function App() {
                 <MetricsDashboard />
               </ProtectedRoute>
             }
+          />
+          <Route
+            path="/enforcesense"
+            element={
+              <ProtectedRoute>
+                <EnforceSenseDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/enforcesense/cases"
+            element={
+              <ProtectedRoute>
+                <EnforceSenseCases />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/enforcesense/cases/:id"
+            element={
+              <ProtectedRoute>
+                <EnforceSenseCaseDetail />
+              </ProtectedRoute>
+            }
+          />
+          {/* Debtor Portal Routes (Public - No Auth Required) */}
+          <Route
+            path="/debtor-portal/login"
+            element={<DebtorPortalLogin />}
+          />
+          <Route
+            path="/debtor-portal/cases"
+            element={<DebtorPortalCases />}
           />
           <Route path="/" element={<Navigate to="/dashboard" />} />
             </Routes>

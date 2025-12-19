@@ -43,6 +43,10 @@ from .user_2fa import User2FA
 from .security_event import SecurityEvent, SecurityEventType, SecurityEventSeverity
 from .gdpr import DataCollectionRecord, PrivacyPolicy, SubjectAccessRequest, DataCollectionPurpose, SARStatus
 from .iso import ISOControl, ISOAssessment, ISOAudit, ISOStandard, ComplianceStatus
+from .enforcesense import (
+    Debtor, EnforcementClient, EnforcementCase, CaseTransaction, CaseNote,
+    DebtorEntityType, CaseStatus, CaseType, TransactionType
+)
 
 __all__ = [
     "Base",
@@ -85,6 +89,15 @@ __all__ = [
     "ISOAssessment",
     "ISOAudit",
     "ISOStandard",
-    "ComplianceStatus"
+    "ComplianceStatus",
+    "Debtor",
+    "EnforcementClient",
+    "EnforcementCase",
+    "CaseTransaction",
+    "CaseNote",
+    "DebtorEntityType",
+    "CaseStatus",
+    "CaseType",
+    "TransactionType"
 ]
 

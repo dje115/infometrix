@@ -1,13 +1,16 @@
 """
-EnforceSense Module Implementation (Placeholder)
+EnforceSense Module Implementation
 
-This is a placeholder module for EnforceSense integration.
-The actual EnforceSense code will be integrated via git submodule.
+EnforceSense debt recovery and enforcement module following the Core Domain Model:
+- Debtor: Real-world person OR legal entity that owes money
+- Client: Creditor or instructing organisation
+- Case: Single enforcement instruction linking ONE Debtor to ONE Client
 """
 
 from typing import List, Dict, Any
 from fastapi import APIRouter
 from app.modules.base import BaseModule
+from app.api.v1.endpoints import enforcesense
 
 
 class EnforceSenseModule(BaseModule):
@@ -27,18 +30,17 @@ class EnforceSenseModule(BaseModule):
     
     @property
     def version(self) -> str:
-        return "0.1.0"  # Placeholder version
+        return "1.0.0"
     
     def get_routes(self) -> APIRouter:
-        """Return EnforceSense routes (placeholder)"""
+        """Return EnforceSense routes"""
         router = APIRouter()
         
-        # TODO: Mount EnforceSense routes when integrated
-        # router.include_router(
-        #     enforcesense_routes.router,
-        #     prefix="/enforcesense",
-        #     tags=["enforcesense"]
-        # )
+        # Mount EnforceSense routes
+        router.include_router(
+            enforcesense.router,
+            tags=["enforcesense"]
+        )
         
         return router
     

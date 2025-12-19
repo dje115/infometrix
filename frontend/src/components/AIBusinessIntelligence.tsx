@@ -62,7 +62,10 @@ const AIBusinessIntelligence: React.FC = () => {
       setAnalyzing(true);
       setError('');
 
-      const response = await settingsAPI.post('/company-profile/analyze');
+      // AI analysis can take longer than 30 seconds - use 2 minute timeout
+      const response = await settingsAPI.post('/company-profile/analyze', {}, {
+        timeout: 120000  // 2 minutes
+      });
 
       if (response.data.success) {
         // Store the NEW analysis as suggestions (don't overwrite current data)

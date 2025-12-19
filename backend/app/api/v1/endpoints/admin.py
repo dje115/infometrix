@@ -272,6 +272,21 @@ class TenantListResponse(BaseModel):
         from_attributes = True
 
 
+class TenantDetailResponse(BaseModel):
+    id: str
+    name: str
+    company_name: str | None
+    slug: str
+    domain: str | None
+    status: str
+    plan: str
+    feature_flags: dict
+    created_at: str
+    
+    class Config:
+        from_attributes = True
+
+
 class PaginatedTenantsResponse(BaseModel):
     total: int
     page: int
@@ -292,8 +307,12 @@ class TenantCreateRequest(BaseModel):
 
 class TenantUpdateRequest(BaseModel):
     name: str | None = None
+    company_name: str | None = None
+    slug: str | None = None
+    domain: str | None = None
     status: str | None = None
     plan: str | None = None
+    feature_flags: dict | None = None  # Module access control
 
 
 @router.get("/tenants", response_model=PaginatedTenantsResponse)
@@ -451,6 +470,51 @@ async def create_tenant_admin(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/tenants/{tenant_id}", response_model=TenantDetailResponse)
+async def get_tenant_admin(
+    tenant_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get a single tenant with feature flags (admin only)
+    
+    PERFORMANCE: Uses AsyncSession to prevent blocking the event loop.
+    """
+    # Check if user is admin
+    if current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        stmt = select(Tenant).where(Tenant.id == tenant_id)
+        result = await db.execute(stmt)
+        tenant = result.scalar_one_or_none()
+        if not tenant:
+            raise HTTPException(status_code=404, detail="Tenant not found")
+        
+        # Get feature flags with defaults
+        from app.core.feature_flags import FeatureFlagService
+        feature_flags = await FeatureFlagService.get_tenant_flags(db, tenant_id)
+        
+        return TenantDetailResponse(
+            id=str(tenant.id),
+            name=tenant.name,
+            company_name=tenant.company_name,
+            slug=tenant.slug,
+            domain=tenant.domain,
+            status=tenant.status.value if hasattr(tenant.status, 'value') else str(tenant.status),
+            plan=tenant.plan,
+            feature_flags=feature_flags,
+            created_at=tenant.created_at.isoformat()
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get tenant: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.put("/tenants/{tenant_id}")
 async def update_tenant_admin(
     tenant_id: str,
@@ -476,6 +540,12 @@ async def update_tenant_admin(
         
         if tenant_data.name:
             tenant.name = tenant_data.name
+        if tenant_data.company_name is not None:
+            tenant.company_name = tenant_data.company_name
+        if tenant_data.slug:
+            tenant.slug = tenant_data.slug
+        if tenant_data.domain is not None:
+            tenant.domain = tenant_data.domain
         if tenant_data.status:
             # Convert string to enum
             if tenant_data.status == "active":
@@ -486,6 +556,13 @@ async def update_tenant_admin(
                 tenant.status = TenantStatus.SUSPENDED
         if tenant_data.plan:
             tenant.plan = tenant_data.plan
+        if tenant_data.feature_flags is not None:
+            # Update feature flags (merge with existing)
+            current_flags = tenant.feature_flags or {}
+            if not isinstance(current_flags, dict):
+                current_flags = {}
+            current_flags.update(tenant_data.feature_flags)
+            tenant.feature_flags = current_flags
         
         await db.commit()
         

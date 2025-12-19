@@ -129,6 +129,20 @@
         <el-form-item v-if="!editingTenantId" label="Admin Password" prop="admin_password">
           <el-input v-model="createForm.admin_password" type="password" placeholder="Password" />
         </el-form-item>
+        
+        <!-- Module Access Control -->
+        <el-divider v-if="editingTenantId">Module Access</el-divider>
+        <el-form-item v-if="editingTenantId" label="Enabled Modules">
+          <el-checkbox-group v-model="createForm.feature_flags">
+            <el-checkbox label="HELPDESK_ENABLED">Helpdesk</el-checkbox>
+            <el-checkbox label="ENFORCESENSE_ENABLED">EnforceSense</el-checkbox>
+            <el-checkbox label="QUOTING_ENABLED">Quoting</el-checkbox>
+            <el-checkbox label="SALES_ENABLED">Sales / CRM</el-checkbox>
+          </el-checkbox-group>
+          <div style="margin-top: 8px; color: #909399; font-size: 12px;">
+            Select which modules this tenant has access to
+          </div>
+        </el-form-item>
       </el-form>
       
       <template #footer>
@@ -172,7 +186,8 @@ export default {
       domain: '',
       plan: 'trial',
       admin_email: '',
-      admin_password: ''
+      admin_password: '',
+      feature_flags: []  // Array of enabled feature flag names
     })
     
     const createRules = {
@@ -233,7 +248,23 @@ export default {
         
         if (editingTenantId.value) {
           // Update existing tenant
-          await axios.put(`http://localhost:8000/api/v1/admin/tenants/${editingTenantId.value}`, createForm, {
+          // Convert feature flags array to object format
+          const updateData = {
+            name: createForm.name,
+            company_name: createForm.company_name,
+            slug: createForm.slug,
+            domain: createForm.domain,
+            plan: createForm.plan,
+            feature_flags: {}
+          }
+          
+          // Build feature flags object from checked items
+          const allFlags = ['HELPDESK_ENABLED', 'ENFORCESENSE_ENABLED', 'QUOTING_ENABLED', 'SALES_ENABLED']
+          allFlags.forEach(flag => {
+            updateData.feature_flags[flag] = createForm.feature_flags.includes(flag)
+          })
+          
+          await axios.put(`http://localhost:8000/api/v1/admin/tenants/${editingTenantId.value}`, updateData, {
             headers: {
               'Authorization': `Bearer ${token}`
             }
@@ -256,11 +287,13 @@ export default {
         // Reset form
         Object.assign(createForm, {
           name: '',
+          company_name: '',
           slug: '',
           domain: '',
           plan: 'trial',
           admin_email: '',
-          admin_password: ''
+          admin_password: '',
+          feature_flags: []
         })
       } catch (error) {
         console.error('Failed to save tenant:', error)
@@ -275,21 +308,56 @@ export default {
       }
     }
     
-    const editTenant = (tenant) => {
-      // Pre-fill the create form with existing tenant data
-      Object.assign(createForm, {
-        name: tenant.name,
-        company_name: tenant.company_name || '',
-        slug: tenant.slug,
-        domain: tenant.domain,
-        plan: tenant.plan,
-        admin_email: '', // Don't show current admin email for security
-        admin_password: '' // Don't show current password for security
-      })
-      
-      // Store the tenant ID for update
-      editingTenantId.value = tenant.id
-      showCreateDialog.value = true
+    const editTenant = async (tenant) => {
+      try {
+        loading.value = true
+        const token = localStorage.getItem('admin_token')
+        
+        // Fetch full tenant details including feature flags
+        const response = await axios.get(`http://localhost:8000/api/v1/admin/tenants/${tenant.id}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        })
+        
+        const tenantData = response.data
+        
+        // Convert feature flags object to array of enabled flags
+        const enabledFlags = []
+        if (tenantData.feature_flags) {
+          Object.keys(tenantData.feature_flags).forEach(flag => {
+            if (tenantData.feature_flags[flag] === true) {
+              enabledFlags.push(flag)
+            }
+          })
+        }
+        
+        // Pre-fill the create form with existing tenant data
+        Object.assign(createForm, {
+          name: tenantData.name,
+          company_name: tenantData.company_name || '',
+          slug: tenantData.slug,
+          domain: tenantData.domain || '',
+          plan: tenantData.plan,
+          admin_email: '', // Don't show current admin email for security
+          admin_password: '', // Don't show current password for security
+          feature_flags: enabledFlags
+        })
+        
+        // Store the tenant ID for update
+        editingTenantId.value = tenant.id
+        showCreateDialog.value = true
+      } catch (error) {
+        console.error('Failed to load tenant details:', error)
+        if (error.response?.status === 401) {
+          localStorage.removeItem('admin_token')
+          router.push('/login')
+        } else {
+          ElMessage.error('Failed to load tenant details')
+        }
+      } finally {
+        loading.value = false
+      }
     }
     
     const toggleTenantStatus = async (tenant) => {

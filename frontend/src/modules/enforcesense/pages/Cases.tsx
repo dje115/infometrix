@@ -1,0 +1,418 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Container,
+  Box,
+  Typography,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Chip,
+  Button,
+  TextField,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Alert,
+  IconButton,
+  Tooltip,
+  CircularProgress,
+  Grid,
+  Card,
+  CardContent
+} from '@mui/material';
+import {
+  Add as AddIcon,
+  Refresh as RefreshIcon,
+  Search as SearchIcon,
+  Visibility as ViewIcon,
+  Edit as EditIcon
+} from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
+import { enforcesenseAPI } from '../../../services/enforcesenseAPI';
+
+interface Case {
+  id: string;
+  case_reference: string;
+  client_reference?: string;
+  debtor_id: string;
+  client_id: string;
+  case_type: string;
+  status: string;
+  original_amount: number;
+  current_balance: number;
+  debtor?: {
+    legal_name: string;
+    entity_type: string;
+  };
+  client?: {
+    name: string;
+  };
+  created_at: string;
+}
+
+const Cases: React.FC = () => {
+  const navigate = useNavigate();
+  const [cases, setCases] = useState<Case[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [debtors, setDebtors] = useState<any[]>([]);
+  const [clients, setClients] = useState<any[]>([]);
+  const [newCase, setNewCase] = useState({
+    debtor_id: '',
+    client_id: '',
+    case_type: 'county_court_judgment',
+    status: 'draft',
+    original_amount: 0,
+    legal_basis: '',
+    client_reference: ''
+  });
+
+  useEffect(() => {
+    loadCases();
+    loadDebtors();
+    loadClients();
+  }, [filterStatus]);
+
+  const loadCases = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const params: any = {};
+      if (filterStatus !== 'all') {
+        params.status = filterStatus;
+      }
+      if (searchQuery) {
+        params.search = searchQuery;
+      }
+      const response = await enforcesenseAPI.listCases(params);
+      setCases(response.data || []);
+    } catch (err: any) {
+      console.error('Failed to load cases:', err);
+      setError(err.response?.data?.detail || 'Failed to load cases');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadDebtors = async () => {
+    try {
+      const response = await enforcesenseAPI.listDebtors({ limit: 1000 });
+      setDebtors(response.data || []);
+    } catch (err) {
+      console.error('Failed to load debtors:', err);
+    }
+  };
+
+  const loadClients = async () => {
+    try {
+      const response = await enforcesenseAPI.listClients({ limit: 1000 });
+      setClients(response.data || []);
+    } catch (err) {
+      console.error('Failed to load clients:', err);
+    }
+  };
+
+  const handleCreateCase = async () => {
+    try {
+      await enforcesenseAPI.createCase(newCase);
+      setCreateDialogOpen(false);
+      setNewCase({
+        debtor_id: '',
+        client_id: '',
+        case_type: 'county_court_judgment',
+        status: 'draft',
+        original_amount: 0,
+        legal_basis: '',
+        client_reference: ''
+      });
+      loadCases();
+    } catch (err: any) {
+      console.error('Failed to create case:', err);
+      setError(err.response?.data?.detail || 'Failed to create case');
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    const colors: Record<string, 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning'> = {
+      draft: 'default',
+      active: 'primary',
+      on_hold: 'warning',
+      settled: 'success',
+      closed: 'info',
+      cancelled: 'error'
+    };
+    return colors[status] || 'default';
+  };
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-GB', {
+      style: 'currency',
+      currency: 'GBP'
+    }).format(amount);
+  };
+
+  const formatCaseType = (type: string) => {
+    return type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+  };
+
+  return (
+    <Container maxWidth="xl" sx={{ py: 3 }}>
+      <Box mb={3} display="flex" justifyContent="space-between" alignItems="center">
+        <Typography variant="h4" component="h1">
+          Enforcement Cases
+        </Typography>
+        <Box>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => setCreateDialogOpen(true)}
+            sx={{ mr: 1 }}
+          >
+            New Case
+          </Button>
+          <IconButton onClick={loadCases}>
+            <RefreshIcon />
+          </IconButton>
+        </Box>
+      </Box>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
+
+      {/* Filters */}
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Grid container spacing={2} alignItems="center">
+          <Grid item xs={12} md={4}>
+            <TextField
+              fullWidth
+              placeholder="Search cases..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter') {
+                  loadCases();
+                }
+              }}
+              InputProps={{
+                startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} />
+              }}
+            />
+          </Grid>
+          <Grid item xs={12} md={3}>
+            <FormControl fullWidth>
+              <InputLabel>Status</InputLabel>
+              <Select
+                value={filterStatus}
+                label="Status"
+                onChange={(e) => setFilterStatus(e.target.value)}
+              >
+                <MenuItem value="all">All Statuses</MenuItem>
+                <MenuItem value="draft">Draft</MenuItem>
+                <MenuItem value="active">Active</MenuItem>
+                <MenuItem value="on_hold">On Hold</MenuItem>
+                <MenuItem value="settled">Settled</MenuItem>
+                <MenuItem value="closed">Closed</MenuItem>
+                <MenuItem value="cancelled">Cancelled</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+        </Grid>
+      </Paper>
+
+      {/* Cases Table */}
+      {loading ? (
+        <Box display="flex" justifyContent="center" p={4}>
+          <CircularProgress />
+        </Box>
+      ) : (
+        <TableContainer component={Paper}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>Case Reference</TableCell>
+                <TableCell>Debtor</TableCell>
+                <TableCell>Client</TableCell>
+                <TableCell>Type</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell align="right">Original Amount</TableCell>
+                <TableCell align="right">Current Balance</TableCell>
+                <TableCell>Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {cases.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} align="center">
+                    <Typography color="text.secondary" sx={{ py: 4 }}>
+                      No cases found
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                cases.map((caseItem) => (
+                  <TableRow key={caseItem.id} hover>
+                    <TableCell>
+                      <Typography variant="body2" fontWeight="bold">
+                        {caseItem.case_reference}
+                      </Typography>
+                      {caseItem.client_reference && (
+                        <Typography variant="caption" color="text.secondary">
+                          Client Ref: {caseItem.client_reference}
+                        </Typography>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {caseItem.debtor?.legal_name || 'Unknown'}
+                    </TableCell>
+                    <TableCell>
+                      {caseItem.client?.name || 'Unknown'}
+                    </TableCell>
+                    <TableCell>{formatCaseType(caseItem.case_type)}</TableCell>
+                    <TableCell>
+                      <Chip
+                        label={caseItem.status.charAt(0).toUpperCase() + caseItem.status.slice(1).replace('_', ' ')}
+                        color={getStatusColor(caseItem.status)}
+                        size="small"
+                      />
+                    </TableCell>
+                    <TableCell align="right">
+                      {formatCurrency(caseItem.original_amount)}
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography
+                        variant="body2"
+                        fontWeight="bold"
+                        color={caseItem.current_balance > 0 ? 'error.main' : 'success.main'}
+                      >
+                        {formatCurrency(caseItem.current_balance)}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Tooltip title="View Details">
+                        <IconButton
+                          size="small"
+                          onClick={() => navigate(`/enforcesense/cases/${caseItem.id}`)}
+                        >
+                          <ViewIcon />
+                        </IconButton>
+                      </Tooltip>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+
+      {/* Create Case Dialog */}
+      <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Create New Case</DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 2 }}>
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel>Debtor *</InputLabel>
+              <Select
+                value={newCase.debtor_id}
+                label="Debtor *"
+                onChange={(e) => setNewCase({ ...newCase, debtor_id: e.target.value })}
+              >
+                {debtors.map((debtor) => (
+                  <MenuItem key={debtor.id} value={debtor.id}>
+                    {debtor.legal_name} ({debtor.entity_type})
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel>Client *</InputLabel>
+              <Select
+                value={newCase.client_id}
+                label="Client *"
+                onChange={(e) => setNewCase({ ...newCase, client_id: e.target.value })}
+              >
+                {clients.map((client) => (
+                  <MenuItem key={client.id} value={client.id}>
+                    {client.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel>Case Type *</InputLabel>
+              <Select
+                value={newCase.case_type}
+                label="Case Type *"
+                onChange={(e) => setNewCase({ ...newCase, case_type: e.target.value })}
+              >
+                <MenuItem value="county_court_judgment">County Court Judgment</MenuItem>
+                <MenuItem value="high_court_writ">High Court Writ</MenuItem>
+                <MenuItem value="magistrates_court">Magistrates Court</MenuItem>
+                <MenuItem value="council_tax">Council Tax</MenuItem>
+                <MenuItem value="business_rates">Business Rates</MenuItem>
+                <MenuItem value="parking_fine">Parking Fine</MenuItem>
+                <MenuItem value="other">Other</MenuItem>
+              </Select>
+            </FormControl>
+
+            <TextField
+              fullWidth
+              label="Client Reference"
+              value={newCase.client_reference}
+              onChange={(e) => setNewCase({ ...newCase, client_reference: e.target.value })}
+              sx={{ mb: 2 }}
+            />
+
+            <TextField
+              fullWidth
+              label="Original Amount"
+              type="number"
+              value={newCase.original_amount}
+              onChange={(e) => setNewCase({ ...newCase, original_amount: parseFloat(e.target.value) || 0 })}
+              sx={{ mb: 2 }}
+            />
+
+            <TextField
+              fullWidth
+              label="Legal Basis"
+              multiline
+              rows={3}
+              value={newCase.legal_basis}
+              onChange={(e) => setNewCase({ ...newCase, legal_basis: e.target.value })}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleCreateCase}
+            disabled={!newCase.debtor_id || !newCase.client_id}
+          >
+            Create
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Container>
+  );
+};
+
+export default Cases;
+

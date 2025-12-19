@@ -771,13 +771,23 @@ async def auto_fill_company_profile(
         sync_db = SessionLocal()
         try:
             api_keys = get_api_keys(sync_db, current_tenant)
+            # Log which source the keys came from for debugging
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"[auto-fill] API keys source: {api_keys.source}, has_openai: {bool(api_keys.openai)}, tenant_id: {current_tenant.id}")
         finally:
             sync_db.close()
         
         if not api_keys.openai:
+            # Provide more helpful error message
+            error_msg = f"OpenAI API key not configured for tenant '{current_tenant.name}'. "
+            if api_keys.source == "none":
+                error_msg += "Please configure an API key in Settings → API Keys, or ensure system-level keys are configured in the admin portal."
+            else:
+                error_msg += f"Checked {api_keys.source} keys but none found."
             raise HTTPException(
                 status_code=400,
-                detail="OpenAI API key not configured. Please add your API key in settings."
+                detail=error_msg
             )
         
         company_name = current_tenant.company_name or current_tenant.name

@@ -141,7 +141,10 @@ const CompanyProfile: React.FC = () => {
       setError('');
       
       console.log('[handleAnalyzeCompany] Calling API endpoint /company-profile/analyze');
-      const response = await settingsAPI.post('/company-profile/analyze');
+      // AI analysis can take longer than 30 seconds - use 2 minute timeout
+      const response = await settingsAPI.post('/company-profile/analyze', {}, {
+        timeout: 120000  // 2 minutes
+      });
       console.log('[handleAnalyzeCompany] API response received:', response.data);
       
       if (response.data.success) {
@@ -181,7 +184,10 @@ const CompanyProfile: React.FC = () => {
         return;
       }
       
-      const response = await settingsAPI.post('/company-profile/auto-fill');
+      // AI auto-fill can take longer than 30 seconds - use 2 minute timeout
+      const response = await settingsAPI.post('/company-profile/auto-fill', {}, {
+        timeout: 120000  // 2 minutes
+      });
       const apiResponse = response.data;
       const data = apiResponse.data; // The nested data object
       
