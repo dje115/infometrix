@@ -147,3 +147,27 @@ async def get_current_tenant(
     
     return tenant
 
+
+async def check_permission(user: User, permission: str):
+    """
+    Check if user has a specific permission.
+    
+    Args:
+        user: User object
+        permission: Permission string to check (e.g., "enforcesense:view")
+    
+    Raises:
+        HTTPException: If user doesn't have permission
+    """
+    # Check if user is super admin (has all permissions)
+    if hasattr(user, 'is_super_admin') and user.is_super_admin:
+        return
+    
+    # Check if user has the permission
+    user_permissions = user.permissions or []
+    if permission not in user_permissions:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Permission '{permission}' required"
+        )
+
