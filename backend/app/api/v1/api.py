@@ -5,7 +5,7 @@ Main API router for v1
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, tenants, users, customers, contacts, leads, campaigns, quotes, settings, translation, ai_analysis, admin, dashboard, activities, sectors, campaign_monitor, planning, ai_prompts, products, version, websocket, suppliers, product_search, building_analysis, pricing_import, provider_keys, emails, storage, pricing_config, support_contracts, contract_renewals, dynamic_pricing, helpdesk, reporting, sla, revenue, customer_portal, customer_portal_access, trends, metrics, quote_prompts, opportunities, contracts, quote_documents, whatsapp, compliance, security, compliance, debtor_portal
+from app.api.v1.endpoints import auth, tenants, users, customers, contacts, leads, campaigns, quotes, settings, translation, ai_analysis, admin, dashboard, activities, sectors, campaign_monitor, planning, ai_prompts, products, version, websocket, suppliers, product_search, building_analysis, pricing_import, provider_keys, emails, storage, pricing_config, support_contracts, contract_renewals, dynamic_pricing, helpdesk, reporting, sla, revenue, customer_portal, customer_portal_access, trends, metrics, quote_prompts, opportunities, contracts, quote_documents, whatsapp, compliance, security, compliance, debtor_portal, modules
 
 # Import module system
 from app.modules import get_module_registry
@@ -83,4 +83,5 @@ for module in module_registry.get_all_modules().values():
         )
 
 api_router.include_router(modules_router)
+api_router.include_router(modules.router, tags=["modules"])
 

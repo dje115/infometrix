@@ -13,6 +13,7 @@ from pydantic import BaseModel, EmailStr, Field
 from datetime import datetime, timezone, date
 
 from app.core.dependencies import get_current_user, get_current_tenant, check_permission
+from app.core.module_dependencies import verify_module_access
 from app.core.database import get_async_db, SessionLocal
 from app.models.tenant import User, Tenant
 from app.models.helpdesk import Ticket, TicketStatus, TicketPriority, TicketType
