@@ -1,33 +1,60 @@
-import { apiClient } from './api';
+import axios from 'axios';
+
+// Enforcement API client (separate from Platform API)
+// Enforcement API runs on port 8001 and doesn't use /api/v1 prefix
+const ENFORCEMENT_API_BASE_URL = import.meta.env.VITE_ENFORCEMENT_API_URL || 'http://localhost:8001';
+
+const enforcementApiClient = axios.create({
+  baseURL: ENFORCEMENT_API_BASE_URL,
+  timeout: 30000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  withCredentials: true,  // IMPORTANT: Required for HttpOnly cookies
+});
+
+// Add response interceptor for error handling
+enforcementApiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Handle unauthorized access
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
 
 export const enforcesenseAPI = {
   // Dashboard
-  getDashboard: () => apiClient.get('/modules/enforcesense/dashboard'),
+  getDashboard: () => enforcementApiClient.get('/enforcesense/dashboard'),
 
   // Debtors
-  listDebtors: (params?: any) => apiClient.get('/modules/enforcesense/debtors', { params }),
-  getDebtor: (id: string) => apiClient.get(`/modules/enforcesense/debtors/${id}`),
-  createDebtor: (data: any) => apiClient.post('/modules/enforcesense/debtors', data),
-  updateDebtor: (id: string, data: any) => apiClient.put(`/modules/enforcesense/debtors/${id}`, data),
-  deleteDebtor: (id: string) => apiClient.delete(`/modules/enforcesense/debtors/${id}`),
+  listDebtors: (params?: any) => enforcementApiClient.get('/enforcesense/debtors', { params }),
+  getDebtor: (id: string) => enforcementApiClient.get(`/enforcesense/debtors/${id}`),
+  createDebtor: (data: any) => enforcementApiClient.post('/enforcesense/debtors', data),
+  updateDebtor: (id: string, data: any) => enforcementApiClient.put(`/enforcesense/debtors/${id}`, data),
+  deleteDebtor: (id: string) => enforcementApiClient.delete(`/enforcesense/debtors/${id}`),
 
   // Clients
-  listClients: (params?: any) => apiClient.get('/modules/enforcesense/clients', { params }),
-  getClient: (id: string) => apiClient.get(`/modules/enforcesense/clients/${id}`),
-  createClient: (data: any) => apiClient.post('/modules/enforcesense/clients', data),
-  updateClient: (id: string, data: any) => apiClient.put(`/modules/enforcesense/clients/${id}`, data),
+  listClients: (params?: any) => enforcementApiClient.get('/enforcesense/clients', { params }),
+  getClient: (id: string) => enforcementApiClient.get(`/enforcesense/clients/${id}`),
+  createClient: (data: any) => enforcementApiClient.post('/enforcesense/clients', data),
+  updateClient: (id: string, data: any) => enforcementApiClient.put(`/enforcesense/clients/${id}`, data),
 
   // Cases
-  listCases: (params?: any) => apiClient.get('/modules/enforcesense/cases', { params }),
-  getCase: (id: string) => apiClient.get(`/modules/enforcesense/cases/${id}`),
-  createCase: (data: any) => apiClient.post('/modules/enforcesense/cases', data),
-  updateCase: (id: string, data: any) => apiClient.put(`/modules/enforcesense/cases/${id}`, data),
+  listCases: (params?: any) => enforcementApiClient.get('/enforcesense/cases', { params }),
+  getCase: (id: string) => enforcementApiClient.get(`/enforcesense/cases/${id}`),
+  createCase: (data: any) => enforcementApiClient.post('/enforcesense/cases', data),
+  updateCase: (id: string, data: any) => enforcementApiClient.put(`/enforcesense/cases/${id}`, data),
 
   // Case Notes (with AI improvement)
   addCaseNote: (caseId: string, note: string, triggerAI: boolean = true) =>
-    apiClient.post(`/modules/enforcesense/cases/${caseId}/notes`, { note, trigger_ai: triggerAI }),
-  getCaseNotes: (caseId: string) => apiClient.get(`/modules/enforcesense/cases/${caseId}/notes`),
+    enforcementApiClient.post(`/enforcesense/cases/${caseId}/notes`, { note, trigger_ai: triggerAI }),
+  getCaseNotes: (caseId: string) => enforcementApiClient.get(`/enforcesense/cases/${caseId}/notes`),
   improveNote: (caseId: string, noteId: string) =>
-    apiClient.post(`/modules/enforcesense/cases/${caseId}/notes/${noteId}/improve`),
+    enforcementApiClient.post(`/enforcesense/cases/${caseId}/notes/${noteId}/improve`),
 };
 

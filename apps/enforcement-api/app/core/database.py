@@ -52,7 +52,7 @@ async def init_db():
     Runs migration scripts to create EnforceSense tables and portal_sessions.
     """
     migrations = [
-        ("create_enforcesense_tables.sql", "debtors"),
+        ("create_enforcement_tables_full.sql", "enforcement_clients"),  # Check for enforcement_clients as it's created last
         ("add_portal_sessions_table.sql", "portal_sessions")
     ]
     

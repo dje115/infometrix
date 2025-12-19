@@ -948,8 +948,7 @@ async def get_case_notes(
     notes_stmt = select(CaseNote).where(
         and_(
             CaseNote.case_id == case_id,
-            CaseNote.tenant_id == current_user.tenant_id,
-            CaseNote.is_deleted == False
+            CaseNote.tenant_id == current_user.tenant_id
         )
     ).order_by(CaseNote.created_at.desc())
     
