@@ -8,6 +8,19 @@
       </el-button>
     </div>
     
+    <!-- Info Banner -->
+    <el-alert
+      title="Module Access Control"
+      type="info"
+      :closable="false"
+      show-icon
+      style="margin-bottom: 20px;"
+    >
+      <template #default>
+        <span>To enable/disable modules (Helpdesk, EnforceSense, Quoting, Sales) for a tenant, click the <strong>"Edit"</strong> button on any tenant row. The Module Access section will appear in the edit dialog.</span>
+      </template>
+    </el-alert>
+    
     <!-- Filters -->
     <el-card class="filter-card">
       <el-row :gutter="20">
@@ -49,10 +62,11 @@
         </el-table-column>
         <el-table-column prop="plan" label="Plan" />
         <el-table-column prop="created_at" label="Created" />
-        <el-table-column label="Actions" width="200">
+        <el-table-column label="Actions" width="250">
           <template #default="scope">
-            <el-button size="small" @click="editTenant(scope.row)">
+            <el-button size="small" type="primary" @click="editTenant(scope.row)">
               <el-icon><Edit /></el-icon>
+              Edit
             </el-button>
             <el-button
               size="small"
@@ -131,17 +145,35 @@
         </el-form-item>
         
         <!-- Module Access Control -->
-        <el-divider v-if="editingTenantId">Module Access</el-divider>
-        <el-form-item v-if="editingTenantId" label="Enabled Modules">
-          <el-checkbox-group v-model="createForm.feature_flags">
-            <el-checkbox label="HELPDESK_ENABLED">Helpdesk</el-checkbox>
-            <el-checkbox label="ENFORCESENSE_ENABLED">EnforceSense</el-checkbox>
-            <el-checkbox label="QUOTING_ENABLED">Quoting</el-checkbox>
-            <el-checkbox label="SALES_ENABLED">Sales / CRM</el-checkbox>
-          </el-checkbox-group>
-          <div style="margin-top: 8px; color: #909399; font-size: 12px;">
-            Select which modules this tenant has access to
-          </div>
+        <el-divider v-if="editingTenantId">
+          <span style="font-weight: bold; font-size: 16px;">Module Access Control</span>
+        </el-divider>
+        <el-form-item v-if="editingTenantId" label="Enabled Modules" style="margin-top: 20px;">
+          <el-card shadow="never" style="background-color: #f5f7fa; border: 1px solid #e4e7ed;">
+            <el-checkbox-group v-model="createForm.feature_flags" style="display: flex; flex-direction: column; gap: 12px;">
+              <el-checkbox label="HELPDESK_ENABLED" size="large">
+                <span style="font-weight: 500;">Helpdesk</span>
+                <span style="color: #909399; font-size: 12px; margin-left: 8px;">- Ticket management and SLA tracking</span>
+              </el-checkbox>
+              <el-checkbox label="ENFORCESENSE_ENABLED" size="large">
+                <span style="font-weight: 500;">EnforceSense</span>
+                <span style="color: #909399; font-size: 12px; margin-left: 8px;">- Debt enforcement and case management</span>
+              </el-checkbox>
+              <el-checkbox label="QUOTING_ENABLED" size="large">
+                <span style="font-weight: 500;">Quoting</span>
+                <span style="color: #909399; font-size: 12px; margin-left: 8px;">- Quote generation and proposals</span>
+              </el-checkbox>
+              <el-checkbox label="SALES_ENABLED" size="large">
+                <span style="font-weight: 500;">Sales / CRM</span>
+                <span style="color: #909399; font-size: 12px; margin-left: 8px;">- Customer relationship management</span>
+              </el-checkbox>
+            </el-checkbox-group>
+            <div style="margin-top: 12px; padding: 8px; background-color: #e6f7ff; border-left: 3px solid #1890ff; border-radius: 4px;">
+              <span style="color: #1890ff; font-size: 12px;">
+                <i class="el-icon-info"></i> Select which modules this tenant has access to. Unchecked modules will be hidden from the tenant's navigation.
+              </span>
+            </div>
+          </el-card>
         </el-form-item>
       </el-form>
       
