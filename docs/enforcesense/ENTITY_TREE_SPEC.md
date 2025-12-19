@@ -106,6 +106,12 @@ Tenant (Infometrix subscription owner)
 - Links to Debtor Party via `debtor_party_id`
 - Contains principal, fees, interest rules, references
 
+**CRITICAL FINANCIAL RULE**: A debt never directly knows your fees. It only knows:
+- What the debtor owes
+- What the client is entitled to receive (gross)
+
+**See**: `docs/enforcesense/FINANCIAL_MODEL.md` for complete financial model
+
 **Fields**:
 - `id`, `tenant_id`
 - `client_account_id` (FK to Customer/Account in CRM)
@@ -412,6 +418,10 @@ Everything else can be added in later phases.
 8. `party_support_profiles` (debt advice/vulnerability)
 9. `compliance_notes` (restricted detailed notes)
 10. `case_support_impacts`
+11. `ledger_entries` (CRITICAL: single source of truth for all financial movements)
+12. `payment_allocations` (payment splitting across debts and fees)
+13. `fee_schedules` (fee structure definitions)
+14. `fee_rules` (individual fee calculation rules)
 
 ### Modified Tables
 1. `enforcement_clients` (add `customer_id` FK)
