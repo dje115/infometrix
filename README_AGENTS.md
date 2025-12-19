@@ -60,10 +60,36 @@ File → Open Workspace → C:\Users\david\Documents\Infometrix\Infometrix.code-
 - **Tenants:** 2 (System + Default CCS)
 - **AI Prompts:** 34 system prompts seeded
 - **GitHub:** https://github.com/dje115/infometrix
+- **Architecture:** Monolithic modular (all modules in main backend/frontend)
+- **EnforceSense:** Module within main backend/frontend (NOT separate container)
+- **Debtor Portal:** Routes within main frontend (NOT separate container)
 
 ---
 
-**Last Updated:** 2025-12-17  
-**Status:** ✅ Ready
+## 📦 **Module Locations**
+
+### EnforceSense Module
+- **Backend API:** `/api/v1/modules/enforcesense/*` (port 8000)
+- **Frontend Routes:** `/enforcesense/*` (port 3000)
+- **Models:** `backend/app/models/enforcesense.py`
+- **Endpoints:** `backend/app/api/v1/endpoints/enforcesense.py`
+- **Frontend Pages:** `frontend/src/modules/enforcesense/pages/`
+
+### Debtor Portal
+- **Backend API:** `/api/v1/debtor-portal/*` (port 8000)
+- **Frontend Routes:** `/debtor-portal/*` (port 3000)
+- **Endpoints:** `backend/app/api/v1/endpoints/debtor_portal.py`
+- **Frontend Pages:** `frontend/src/pages/DebtorPortal*.tsx`
+
+### ⚠️ Legacy Container
+- `infometrix-enforcement-api` (port 8001) - **OLD/LEGACY** - Not part of current architecture
+
+**See:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for complete architecture details.
+
+---
+
+**Last Updated:** 2025-12-19  
+**Status:** ✅ Ready  
+**Version:** 3.6.0
 
 
