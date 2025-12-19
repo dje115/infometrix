@@ -67,6 +67,24 @@ def get_tenant_api_key(tenant: Tenant, key_type: str) -> Optional[str]:
     return key
 
 
+@router.get("/tenant", response_model=TenantInfoResponse)
+async def get_tenant_info(
+    current_user = Depends(get_current_user),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Get current tenant information including enabled modules and feature flags
+    """
+    return TenantInfoResponse(
+        id=current_tenant.id,
+        name=current_tenant.name,
+        slug=current_tenant.slug,
+        enabled_modules=current_tenant.enabled_modules or ["crm", "helpdesk"],
+        feature_flags=current_tenant.feature_flags or {}
+    )
+
+
 @router.post("/api-keys", response_model=APIKeyResponse)
 async def save_api_keys(
     request: APIKeyRequest,

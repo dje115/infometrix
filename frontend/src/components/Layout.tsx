@@ -58,6 +58,7 @@ import VersionDisplay from './VersionDisplay';
 import { settingsAPI } from '../services/api';
 import { CORE_NAVIGATION_GROUPS, MenuGroup } from '../types/modules';
 import ModuleSwitcher from './ModuleSwitcher';
+import { isModuleEnabled } from '../modules/registry';
 
 const drawerWidth = 240;
 
@@ -193,14 +194,31 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   // Get user info for permission checks
   const isAdmin = user.role === 'super_admin' || user.role === 'admin' || user.role === 'tenant_admin';
   
-  // Use feature flags from tenant config (fetched above)
-
-  // Filter navigation groups by feature flags and permissions
+  // Filter navigation groups by enabled modules and feature flags
   const filteredGroups = CORE_NAVIGATION_GROUPS.filter((group: MenuGroup) => {
-    // Check feature flag if present
+    // Map navigation group IDs to module IDs
+    const groupToModuleMap: Record<string, string> = {
+      'sales-crm': 'crm',
+      'helpdesk': 'helpdesk',
+      'enforcesense': 'enforcesense',
+      'quoting': 'quoting',
+    };
+    
+    const moduleId = groupToModuleMap[group.id];
+    
+    // If group has a module mapping, check if module is enabled
+    if (moduleId) {
+      const isEnabled = isModuleEnabled(moduleId, enabledModules, featureFlags);
+      if (!isEnabled) {
+        return false;
+      }
+    }
+    
+    // Also check feature flag if present (for backward compatibility)
     if (group.featureFlag && !featureFlags[group.featureFlag]) {
       return false;
     }
+    
     return true;
   });
 

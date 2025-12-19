@@ -281,6 +281,7 @@ class TenantDetailResponse(BaseModel):
     status: str
     plan: str
     feature_flags: dict
+    enabled_modules: List[str] | None = None
     created_at: str
     
     class Config:
@@ -306,6 +307,7 @@ class TenantCreateRequest(BaseModel):
 
 
 class TenantUpdateRequest(BaseModel):
+    enabled_modules: Optional[List[str]] = None
     name: str | None = None
     company_name: str | None = None
     slug: str | None = None
@@ -505,6 +507,7 @@ async def get_tenant_admin(
             status=tenant.status.value if hasattr(tenant.status, 'value') else str(tenant.status),
             plan=tenant.plan,
             feature_flags=feature_flags,
+            enabled_modules=tenant.enabled_modules or ["crm", "helpdesk"],
             created_at=tenant.created_at.isoformat()
         )
         
@@ -563,6 +566,10 @@ async def update_tenant_admin(
                 current_flags = {}
             current_flags.update(tenant_data.feature_flags)
             tenant.feature_flags = current_flags
+        
+        if tenant_data.enabled_modules is not None:
+            # Update enabled modules
+            tenant.enabled_modules = tenant_data.enabled_modules
         
         await db.commit()
         

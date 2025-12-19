@@ -287,7 +287,8 @@ export default {
             slug: createForm.slug,
             domain: createForm.domain,
             plan: createForm.plan,
-            feature_flags: {}
+            feature_flags: {},
+            enabled_modules: []
           }
           
           // Build feature flags object from checked items
@@ -295,6 +296,22 @@ export default {
           allFlags.forEach(flag => {
             updateData.feature_flags[flag] = createForm.feature_flags.includes(flag)
           })
+          
+          // Map feature flags to module IDs for enabled_modules
+          // CRM is always enabled
+          updateData.enabled_modules.push('crm')
+          
+          // Map feature flags to modules
+          if (createForm.feature_flags.includes('HELPDESK_ENABLED')) {
+            updateData.enabled_modules.push('helpdesk')
+          }
+          if (createForm.feature_flags.includes('ENFORCESENSE_ENABLED')) {
+            updateData.enabled_modules.push('enforcesense')
+          }
+          if (createForm.feature_flags.includes('QUOTING_ENABLED')) {
+            updateData.enabled_modules.push('quoting')
+          }
+          // SALES_ENABLED is part of CRM, so no separate module
           
           await axios.put(`http://localhost:8000/api/v1/admin/tenants/${editingTenantId.value}`, updateData, {
             headers: {
@@ -364,6 +381,27 @@ export default {
           })
         }
         
+        // If enabled_modules exists, use it to determine feature flags
+        // Otherwise, derive from feature_flags
+        let enabledFlagsToUse = enabledFlags
+        if (tenantData.enabled_modules && tenantData.enabled_modules.length > 0) {
+          // Map enabled_modules to feature flags
+          enabledFlagsToUse = []
+          if (tenantData.enabled_modules.includes('helpdesk')) {
+            enabledFlagsToUse.push('HELPDESK_ENABLED')
+          }
+          if (tenantData.enabled_modules.includes('enforcesense')) {
+            enabledFlagsToUse.push('ENFORCESENSE_ENABLED')
+          }
+          if (tenantData.enabled_modules.includes('quoting')) {
+            enabledFlagsToUse.push('QUOTING_ENABLED')
+          }
+          // CRM is always enabled, so SALES_ENABLED should be checked if CRM is in enabled_modules
+          if (tenantData.enabled_modules.includes('crm')) {
+            enabledFlagsToUse.push('SALES_ENABLED')
+          }
+        }
+        
         // Pre-fill the create form with existing tenant data
         Object.assign(createForm, {
           name: tenantData.name,
@@ -373,7 +411,7 @@ export default {
           plan: tenantData.plan,
           admin_email: '', // Don't show current admin email for security
           admin_password: '', // Don't show current password for security
-          feature_flags: enabledFlags
+          feature_flags: enabledFlagsToUse
         })
         
         // Store the tenant ID for update
