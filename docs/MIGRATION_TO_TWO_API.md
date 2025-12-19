@@ -1,7 +1,10 @@
 # Migration Plan: Monolithic to Two-API Architecture
 
 **Version:** 3.6.0  
-**Last Updated:** 2025-12-19
+**Last Updated:** 2025-12-19  
+**Plan Reference:** `C:\Users\david\.cursor\plans\two-api_architecture_migration_3ccc8ea3.plan.md`
+
+> **Note:** This migration plan follows the exact commit-by-commit structure from the plan file. The plan file shows all commits as "completed" but the actual implementation is **not yet done** - only skeleton directories exist.
 
 ---
 
@@ -51,45 +54,64 @@ infometrix/
 
 ## 🎯 Migration Commit Plan
 
-### Commit 0 — Baseline Safety Net
+> **This plan matches exactly:** `C:\Users\david\.cursor\plans\two-api_architecture_migration_3ccc8ea3.plan.md`
 
-**Goal:** Freeze a "known good" starting point
+### Commit 0: Baseline Safety Net
 
-**Actions:**
-- Create branch: `infometrix-platform-migration`
-- Document current run steps
-- Document env vars and ports
-- Create `MIGRATION_NOTES.md` with current state
+**Goal:** Freeze a known good starting point before migration.
+
+**Tasks:**
+1. Create migration branch: `infometrix-platform-migration`
+2. Document current state in `MIGRATION_NOTES.md`:
+   - Current run commands (`docker-compose up`, etc.)
+   - Environment variables required
+   - Port mappings (backend:8000, frontend:3000, admin-portal:3010)
+   - Known issues/limitations
+3. Verify app runs successfully:
+   - Backend starts on port 8000
+   - Frontend accessible on port 3000
+   - Admin portal accessible on port 3010
+   - All modules load correctly
+
+**Files Changed:**
+- Create `MIGRATION_NOTES.md` at root
 
 **Verification:**
-- ✅ App still runs
-- ✅ All tests pass
+- [ ] App runs without errors
+- [ ] All services start successfully
+- [ ] Module switcher works
+- [ ] Helpdesk module accessible
 
 ---
 
-### Commit 1 — Add Module Registry + Module Switcher UI
+### Commit 1: Module Registry + Module Switcher UI (No Code Movement)
 
-**Goal:** Put the "module tab" concept in place without breaking anything
+**Goal:** Establish module tab concept without breaking existing functionality.
 
-**Actions:**
-- Add `src/platform/modules/registry.ts`:
-  - `crm` module defined and enabled by default
-  - `helpdesk` module defined (initially points to existing routes)
-- Implement UI:
-  - Module switcher at top of left nav
-  - Context menu below, driven by registry
-  - Everything still maps to existing pages
-- Add tenant module config stub:
-  - `tenant.enabledModules` default to `["crm","helpdesk"]`
+**Tasks:**
+1. **Enhance module registry** (`frontend/src/modules/registry.ts`):
+   - Ensure CRM module defined and enabled by default
+   - Ensure Helpdesk module defined (still points to existing routes)
+   - Add `enabledByDefault` flag handling
+2. **Verify module switcher UI** (`frontend/src/components/ModuleSwitcher.tsx`):
+   - Module tabs appear at top of left nav
+   - Context menu below driven by registry
+   - All existing routes still work
+3. **Add tenant module config stub**:
+   - Update `backend/app/models/tenant.py` to include `enabledModules` field (JSONB)
+   - Default existing tenants to `["crm", "helpdesk"]`
+   - Add migration if needed
 
 **Files Changed:**
-- `frontend/src/platform/modules/registry.ts` (new)
-- `frontend/src/components/Layout.tsx` (module switcher UI)
-- `backend/app/models/tenant.py` (add `enabledModules` field)
+- `frontend/src/modules/registry.ts` (enhancements)
+- `backend/app/models/tenant.py` (add enabledModules field)
+- `backend/migrations/` (migration for enabledModules if needed)
 
 **Verification:**
-- ✅ App still runs
-- ✅ Nav shows module switcher (even if both map to same routes)
+- [ ] App runs without errors
+- [ ] Module switcher shows CRM and Helpdesk tabs
+- [ ] Context menu updates when switching modules
+- [ ] All existing routes still accessible
 
 ---
 
