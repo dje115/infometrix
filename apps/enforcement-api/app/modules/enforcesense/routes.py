@@ -907,13 +907,14 @@ async def add_case_note(
     await db.refresh(case_note)
     
     # Trigger AI improvement asynchronously if requested
-    # TODO: Implement AI service for Enforcement API
     if note_data.trigger_ai:
-        # AI improvement will be implemented in a future commit
-        # For now, just mark as pending
-        case_note.ai_processing_status = 'pending'
-        await db.commit()
-        await db.refresh(case_note)
+        import asyncio
+        from app.services.enforcesense_ai_service import EnforceSenseAIService
+        
+        # Create AI service and trigger improvement asynchronously
+        ai_service = EnforceSenseAIService(db, current_user.tenant_id)
+        # Run in background task
+        asyncio.create_task(ai_service.improve_note(case_note.id))
     
     return case_note
 
@@ -1002,11 +1003,11 @@ async def improve_note(
         )
     
     # Trigger AI improvement
-    # TODO: Implement AI service for Enforcement API
-    # For now, just mark as processing
-    note.ai_processing_status = 'processing'
-    await db.commit()
-    await db.refresh(note)
+    from app.services.enforcesense_ai_service import EnforceSenseAIService
     
+    ai_service = EnforceSenseAIService(db, current_user.tenant_id)
+    await ai_service.improve_note(note_id)
+    
+    await db.refresh(note)
     return note
 
