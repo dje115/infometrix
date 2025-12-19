@@ -128,6 +128,29 @@ services:
       - infometrix-network
     restart: unless-stopped
 
+  # Debtor Portal (Development Mode, Multilingual)
+  debtor-portal:
+    build:
+      context: ./apps/debtor-portal
+      dockerfile: Dockerfile.dev
+    container_name: infometrix-debtor-portal
+    environment:
+      - VITE_ENFORCEMENT_API_URL=http://localhost:8001
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+    ports:
+      - "3002:3002"
+    volumes:
+      - ./apps/debtor-portal:/app
+      - /app/node_modules
+    depends_on:
+      - enforcement-api
+    networks:
+      - infometrix-network
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
   # Vue.js Admin Portal (Development Mode)
   admin-portal:
     build:

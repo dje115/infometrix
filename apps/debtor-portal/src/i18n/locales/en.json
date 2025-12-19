@@ -1,0 +1,29 @@
+{
+  "login": {
+    "title": "Debtor Portal Login",
+    "enterCode": "Enter your access code",
+    "codePlaceholder": "Access code",
+    "submit": "Submit",
+    "error": "Invalid access code. Please try again.",
+    "loading": "Logging in..."
+  },
+  "case": {
+    "title": "Case Details",
+    "status": "Status",
+    "reference": "Case Reference",
+    "amount": "Amount Owed",
+    "balance": "Current Balance",
+    "loading": "Loading case details...",
+    "error": "Failed to load case details",
+    "notFound": "Case not found"
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "An error occurred",
+    "back": "Back",
+    "close": "Close",
+    "save": "Save",
+    "cancel": "Cancel"
+  }
+}
+

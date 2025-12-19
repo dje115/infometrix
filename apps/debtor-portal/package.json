@@ -1,0 +1,34 @@
+{
+  "name": "infometrix-debtor-portal",
+  "version": "3.6.0",
+  "description": "Infometrix - Debtor Portal (Multilingual)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 3002",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "lint": "eslint src --ext .ts,.tsx"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.9.4",
+    "react-i18next": "^13.5.0",
+    "i18next": "^23.7.6",
+    "axios": "^1.7.7",
+    "@mui/material": "^7.3.4",
+    "@mui/icons-material": "^7.3.4",
+    "@emotion/react": "^11.11.4",
+    "@emotion/styled": "^11.11.5"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^5.1.2",
+    "typescript": "^5.7.2",
+    "vite": "^7.2.7",
+    "eslint": "^8.57.0"
+  }
+}
+

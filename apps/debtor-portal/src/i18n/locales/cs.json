@@ -1,0 +1,29 @@
+{
+  "login": {
+    "title": "Přihlášení do Portálu Dlužníka",
+    "enterCode": "Zadejte přístupový kód",
+    "codePlaceholder": "Přístupový kód",
+    "submit": "Odeslat",
+    "error": "Neplatný přístupový kód. Zkuste to prosím znovu.",
+    "loading": "Přihlašování..."
+  },
+  "case": {
+    "title": "Detaily Případu",
+    "status": "Stav",
+    "reference": "Referenční Číslo",
+    "amount": "Dlužná Částka",
+    "balance": "Aktuální Zůstatek",
+    "loading": "Načítání detailů případu...",
+    "error": "Nepodařilo se načíst detaily případu",
+    "notFound": "Případ nebyl nalezen"
+  },
+  "common": {
+    "loading": "Načítání...",
+    "error": "Došlo k chybě",
+    "back": "Zpět",
+    "close": "Zavřít",
+    "save": "Uložit",
+    "cancel": "Zrušit"
+  }
+}
+

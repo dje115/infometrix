@@ -1,0 +1,29 @@
+{
+  "login": {
+    "title": "Portal Debitor Conectare",
+    "enterCode": "Introduceți codul de acces",
+    "codePlaceholder": "Cod de acces",
+    "submit": "Trimite",
+    "error": "Cod de acces invalid. Vă rugăm să încercați din nou.",
+    "loading": "Conectare..."
+  },
+  "case": {
+    "title": "Detalii Caz",
+    "status": "Status",
+    "reference": "Referință Caz",
+    "amount": "Suma Datorată",
+    "balance": "Sold Curent",
+    "loading": "Se încarcă detaliile cazului...",
+    "error": "Nu s-au putut încărca detaliile cazului",
+    "notFound": "Cazul nu a fost găsit"
+  },
+  "common": {
+    "loading": "Se încarcă...",
+    "error": "A apărut o eroare",
+    "back": "Înapoi",
+    "close": "Închide",
+    "save": "Salvează",
+    "cancel": "Anulează"
+  }
+}
+
