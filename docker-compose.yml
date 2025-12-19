@@ -103,6 +103,31 @@ services:
     stdin_open: true
     tty: true
 
+  # Enforcement API (Development Mode)
+  enforcement-api:
+    build:
+      context: ./apps/enforcement-api
+      dockerfile: Dockerfile.dev
+    container_name: infometrix-enforcement-api
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres_password_2025@postgres:5432/ccs_quote_tool
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=ccs_super_secret_key_2025_change_in_production
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./apps/enforcement-api:/app
+      - ./packages/shared:/packages/shared
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - infometrix-network
+    restart: unless-stopped
+
   # Vue.js Admin Portal (Development Mode)
   admin-portal:
     build:
