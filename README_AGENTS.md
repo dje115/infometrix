@@ -66,7 +66,7 @@ File → Open Workspace → C:\Users\david\Documents\Infometrix\Infometrix.code-
 
 ---
 
-## 📦 **Module Locations**
+## 📦 **Module Locations (Current Implementation)**
 
 ### EnforceSense Module
 - **Backend API:** `/api/v1/modules/enforcesense/*` (port 8000)
@@ -81,10 +81,19 @@ File → Open Workspace → C:\Users\david\Documents\Infometrix\Infometrix.code-
 - **Endpoints:** `backend/app/api/v1/endpoints/debtor_portal.py`
 - **Frontend Pages:** `frontend/src/pages/DebtorPortal*.tsx`
 
-### ⚠️ Legacy Container
-- `infometrix-enforcement-api` (port 8001) - **OLD/LEGACY** - Not part of current architecture
+## 🎯 **Target Architecture (Not Yet Implemented)**
 
-**See:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for complete architecture details.
+**Target:** Two-API Architecture with separate external portals
+
+- **Platform API** (port 8000) - Core platform + CRM + Helpdesk + Quoting
+- **Enforcement API** (port 8001) - EnforceSense module + enforcement workflows
+- **Debtor Portal** (port 3012) - Separate multilingual external portal
+- **Client Portal** (port 3011) - Separate external client portal
+
+**See:**
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - Current implementation
+- [`docs/ARCHITECTURE_TARGET.md`](docs/ARCHITECTURE_TARGET.md) - Target architecture
+- [`docs/MIGRATION_TO_TWO_API.md`](docs/MIGRATION_TO_TWO_API.md) - Migration plan
 
 ---
 

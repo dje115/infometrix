@@ -1,15 +1,18 @@
 # Infometrix Platform Architecture
 
 **Version:** 3.6.0  
-**Last Updated:** 2025-12-19
+**Last Updated:** 2025-12-19  
+**Status:** ⚠️ **CURRENT IMPLEMENTATION** (Monolithic Modular)
+
+> **Note:** This document describes the **current implementation**. For the **target two-API architecture**, see [`docs/ARCHITECTURE_TARGET.md`](ARCHITECTURE_TARGET.md).
 
 ---
 
-## 🏗️ Service Architecture
+## 🏗️ Current Service Architecture
 
 ### Docker Containers
 
-The Infometrix platform runs as a **monolithic modular architecture** where all modules are integrated into the main services:
+The Infometrix platform **currently** runs as a **monolithic modular architecture** where all modules are integrated into the main services:
 
 | Container | Service | Port | Purpose |
 |-----------|---------|------|---------|
@@ -204,6 +207,18 @@ This is different from a **microservices architecture** where each module would 
 
 ---
 
+## ⚠️ Architecture Status
+
+**Current:** Monolithic Modular (all modules in single backend/frontend)  
+**Target:** Two-API Architecture (Platform API + Enforcement API + separate portals)
+
+**See:**
+- [`docs/ARCHITECTURE_TARGET.md`](ARCHITECTURE_TARGET.md) - Target architecture design
+- [`docs/MIGRATION_TO_TWO_API.md`](MIGRATION_TO_TWO_API.md) - Migration plan
+
+---
+
 **Last Updated:** 2025-12-19  
-**Version:** 3.6.0
+**Version:** 3.6.0  
+**Status:** Current Implementation (Monolithic Modular)
 
