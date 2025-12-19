@@ -11,11 +11,19 @@
     "title": "Case Details",
     "status": "Status",
     "reference": "Case Reference",
-    "amount": "Amount Owed",
+    "amount": "Original Amount",
     "balance": "Current Balance",
+    "fees": "Fees Charged",
+    "payments": "Payments Received",
     "loading": "Loading case details...",
     "error": "Failed to load case details",
-    "notFound": "Case not found"
+    "notFound": "Case not found",
+    "paymentHistory": "Payment History",
+    "noPayments": "No payment history available",
+    "date": "Date",
+    "type": "Type",
+    "amount": "Amount",
+    "description": "Description"
   },
   "common": {
     "loading": "Loading...",
