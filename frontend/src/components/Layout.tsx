@@ -226,6 +226,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         </Typography>
       </Toolbar>
       <Divider />
+      {/* Module Switcher - appears at top of navigation */}
+      <ModuleSwitcher
+        enabledModules={enabledModules}
+        featureFlags={featureFlags}
+      />
       <List sx={{ width: '100%', p: 0 }}>
         {filteredGroups.map((group: MenuGroup) => {
           // Filter items by permissions and admin access
