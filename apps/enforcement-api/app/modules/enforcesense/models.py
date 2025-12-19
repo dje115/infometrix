@@ -578,7 +578,7 @@ class PartySupportProfile(Base):
     
     # Relationships
     party = relationship("Party", back_populates="party_support_profile")
-    case_impacts = relationship("CaseSupportImpact", back_populates="party_support_profile")
+    case_impacts = relationship("CaseSupportImpact", back_populates="party_support_profile", foreign_keys="[CaseSupportImpact.party_id]")
     
     def __repr__(self):
         return f"<PartySupportProfile {self.party_id} - {self.support_status.value}>"
