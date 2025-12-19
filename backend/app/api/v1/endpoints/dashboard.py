@@ -194,62 +194,94 @@ async def get_dashboard(
         ))
         inactive_count = inactive_result.scalar() or 0
         
-        quotes_result = await db.execute(select(func.count(Quote.id)).where(
-            and_(
-                Quote.tenant_id == tenant_id,
-                Quote.is_deleted == False
-            )
-        ))
-        total_quotes = quotes_result.scalar() or 0
+        # Get quote metrics (handle case where quotes table doesn't exist)
+        total_quotes = 0
+        quotes_pending = 0
+        quotes_accepted = 0
+        total_revenue = 0.0
+        avg_deal_value = 0.0
+        
+        try:
+            quotes_result = await db.execute(select(func.count(Quote.id)).where(
+                and_(
+                    Quote.tenant_id == tenant_id,
+                    Quote.is_deleted == False
+                )
+            ))
+            total_quotes = quotes_result.scalar() or 0
+        except Exception as e:
+            # Table doesn't exist or other error - set to 0
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Quotes table not available: {e}")
+            total_quotes = 0
         
         # Get opportunity metrics (execute sequentially to avoid asyncpg conflicts)
         # Use string values for enum comparison to avoid SQLAlchemy enum serialization issues
         # Fetch scalar immediately after each query to avoid connection conflicts
-        active_opp_result = await db.execute(select(func.count(Opportunity.id)).where(
-            and_(
-                Opportunity.tenant_id == tenant_id,
-                Opportunity.is_deleted == False,
-                ~Opportunity.stage.in_(["closed_won", "closed_lost"])
-            )
-        ))
-        active_opportunities = active_opp_result.scalar() or 0
+        # Handle case where opportunities table doesn't exist
+        active_opportunities = 0
+        opportunities_qualified = 0
+        opportunities_proposal_sent = 0
+        opportunities_closed_won = 0
+        opportunities_total_value = 0.0
         
-        qualified_result = await db.execute(select(func.count(Opportunity.id)).where(
-            and_(
-                Opportunity.tenant_id == tenant_id,
-                Opportunity.stage == "qualified",
-                Opportunity.is_deleted == False
-            )
-        ))
-        opportunities_qualified = qualified_result.scalar() or 0
-        
-        proposal_result = await db.execute(select(func.count(Opportunity.id)).where(
-            and_(
-                Opportunity.tenant_id == tenant_id,
-                Opportunity.stage == "proposal_sent",
-                Opportunity.is_deleted == False
-            )
-        ))
-        opportunities_proposal_sent = proposal_result.scalar() or 0
-        
-        closed_won_result = await db.execute(select(func.count(Opportunity.id)).where(
-            and_(
-                Opportunity.tenant_id == tenant_id,
-                Opportunity.stage == "closed_won",
-                Opportunity.is_deleted == False
-            )
-        ))
-        opportunities_closed_won = closed_won_result.scalar() or 0
-        
-        opp_value_result = await db.execute(select(func.sum(Opportunity.estimated_value)).where(
-            and_(
-                Opportunity.tenant_id == tenant_id,
-                Opportunity.is_deleted == False,
-                Opportunity.estimated_value.isnot(None)
-            )
-        ))
-        opp_value = opp_value_result.scalar()
-        opportunities_total_value = float(opp_value) if opp_value else 0.0
+        try:
+            active_opp_result = await db.execute(select(func.count(Opportunity.id)).where(
+                and_(
+                    Opportunity.tenant_id == tenant_id,
+                    Opportunity.is_deleted == False,
+                    ~Opportunity.stage.in_(["closed_won", "closed_lost"])
+                )
+            ))
+            active_opportunities = active_opp_result.scalar() or 0
+            
+            qualified_result = await db.execute(select(func.count(Opportunity.id)).where(
+                and_(
+                    Opportunity.tenant_id == tenant_id,
+                    Opportunity.stage == "qualified",
+                    Opportunity.is_deleted == False
+                )
+            ))
+            opportunities_qualified = qualified_result.scalar() or 0
+            
+            proposal_result = await db.execute(select(func.count(Opportunity.id)).where(
+                and_(
+                    Opportunity.tenant_id == tenant_id,
+                    Opportunity.stage == "proposal_sent",
+                    Opportunity.is_deleted == False
+                )
+            ))
+            opportunities_proposal_sent = proposal_result.scalar() or 0
+            
+            closed_won_result = await db.execute(select(func.count(Opportunity.id)).where(
+                and_(
+                    Opportunity.tenant_id == tenant_id,
+                    Opportunity.stage == "closed_won",
+                    Opportunity.is_deleted == False
+                )
+            ))
+            opportunities_closed_won = closed_won_result.scalar() or 0
+            
+            opp_value_result = await db.execute(select(func.sum(Opportunity.estimated_value)).where(
+                and_(
+                    Opportunity.tenant_id == tenant_id,
+                    Opportunity.is_deleted == False,
+                    Opportunity.estimated_value.isnot(None)
+                )
+            ))
+            opp_value = opp_value_result.scalar()
+            opportunities_total_value = float(opp_value) if opp_value else 0.0
+        except Exception as e:
+            # Opportunities table doesn't exist - use default values
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Opportunities table not available: {e}")
+            active_opportunities = 0
+            opportunities_qualified = 0
+            opportunities_proposal_sent = 0
+            opportunities_closed_won = 0
+            opportunities_total_value = 0.0
         
         # Get lifecycle distribution (using existing statuses - INACTIVE for dormant, LOST for closed lost)
         lifecycle_distribution = {
@@ -270,38 +302,47 @@ async def get_dashboard(
         ))
         lifecycle_distribution["LOST"] = lost_result.scalar() or 0
         
-        # Execute remaining quote queries sequentially
+        # Execute remaining quote queries sequentially (if quotes table exists)
         # Use uppercase string literals to match database enum values
         # Fetch scalar immediately after each query to avoid connection conflicts
-        quotes_pending_result = await db.execute(select(func.count(Quote.id)).where(
-            and_(
-                Quote.tenant_id == tenant_id,
-                Quote.is_deleted == False,
-                or_(
-                    Quote.status == "DRAFT",
-                    Quote.status == "SENT"
+        try:
+            quotes_pending_result = await db.execute(select(func.count(Quote.id)).where(
+                and_(
+                    Quote.tenant_id == tenant_id,
+                    Quote.is_deleted == False,
+                    or_(
+                        Quote.status == "DRAFT",
+                        Quote.status == "SENT"
+                    )
                 )
-            )
-        ))
-        quotes_pending = quotes_pending_result.scalar() or 0
-        
-        quotes_accepted_result = await db.execute(select(func.count(Quote.id)).where(
-            and_(
-                Quote.tenant_id == tenant_id,
-                Quote.status == "ACCEPTED",
-                Quote.is_deleted == False
-            )
-        ))
-        quotes_accepted = quotes_accepted_result.scalar() or 0
-        
-        revenue_result = await db.execute(select(func.sum(Quote.total_amount)).where(
-            and_(
-                Quote.tenant_id == tenant_id,
-                Quote.status == "ACCEPTED",
-                Quote.is_deleted == False
-            )
-        ))
-        revenue_value = revenue_result.scalar()
+            ))
+            quotes_pending = quotes_pending_result.scalar() or 0
+            
+            quotes_accepted_result = await db.execute(select(func.count(Quote.id)).where(
+                and_(
+                    Quote.tenant_id == tenant_id,
+                    Quote.status == "ACCEPTED",
+                    Quote.is_deleted == False
+                )
+            ))
+            quotes_accepted = quotes_accepted_result.scalar() or 0
+            
+            revenue_result = await db.execute(select(func.sum(Quote.total_amount)).where(
+                and_(
+                    Quote.tenant_id == tenant_id,
+                    Quote.status == "ACCEPTED",
+                    Quote.is_deleted == False
+                )
+            ))
+            revenue_value = revenue_result.scalar()
+        except Exception as e:
+            # Quotes table doesn't exist - use default values
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Quotes queries failed (table may not exist): {e}")
+            quotes_pending = 0
+            quotes_accepted = 0
+            revenue_value = None
         total_revenue = float(revenue_value) if revenue_value else 0.0
         
         avg_deal_value = (total_revenue / quotes_accepted) if quotes_accepted > 0 else 0.0

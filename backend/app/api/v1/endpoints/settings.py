@@ -41,14 +41,22 @@ class APIKeyResponse(BaseModel):
 
 
 def get_tenant_api_key(tenant: Tenant, key_type: str) -> Optional[str]:
-    """Get API key from tenant or environment fallback"""
+    """Get API key from tenant or environment fallback (decrypted if encrypted)"""
+    from app.core.encryption import decrypt_api_key, is_encrypted
+    
+    key = None
     if key_type == "openai":
-        return tenant.openai_api_key or os.getenv('OPENAI_API_KEY')
+        key = tenant.openai_api_key or os.getenv('OPENAI_API_KEY')
     elif key_type == "companies_house":
-        return tenant.companies_house_api_key or os.getenv('COMPANIES_HOUSE_API_KEY')
+        key = tenant.companies_house_api_key or os.getenv('COMPANIES_HOUSE_API_KEY')
     elif key_type == "google_maps":
-        return tenant.google_maps_api_key or os.getenv('GOOGLE_MAPS_API_KEY')
-    return None
+        key = tenant.google_maps_api_key or os.getenv('GOOGLE_MAPS_API_KEY')
+    
+    # Decrypt if encrypted
+    if key and is_encrypted(key):
+        key = decrypt_api_key(key)
+    
+    return key
 
 
 @router.post("/api-keys", response_model=APIKeyResponse)
@@ -1055,14 +1063,25 @@ If information is missing or unclear, make reasonable inferences based on the co
         keywords = result.get("keywords", [])
         if keywords and websites:
             primary_website = websites[0]
-            # Initialize website_keywords dict if needed
-            if not tenant.website_keywords:
+            # Initialize website_keywords dict if needed (handle None case)
+            if tenant.website_keywords is None:
+                tenant.website_keywords = {}
+            elif not isinstance(tenant.website_keywords, dict):
+                # Ensure it's a dict (in case it's stored as something else)
                 tenant.website_keywords = {}
             # Store keywords for this website
             tenant.website_keywords[primary_website] = keywords
             flag_modified(tenant, "website_keywords")
-            await db.commit()
-            await db.refresh(tenant)
+            try:
+                await db.commit()
+                await db.refresh(tenant)
+            except Exception as commit_error:
+                # Log but don't fail the whole request if keyword save fails
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Failed to save website keywords: {commit_error}", exc_info=True)
+                # Rollback and continue
+                await db.rollback()
         
         # Build sources array
         sources_list = []

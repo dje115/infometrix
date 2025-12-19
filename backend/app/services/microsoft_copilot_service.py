@@ -75,9 +75,14 @@ class MicrosoftCopilotService:
             ).first()
         
         if api_key:
+            # Decrypt if encrypted
+            from app.core.encryption import decrypt_api_key, is_encrypted
+            key = api_key.api_key
+            if key and is_encrypted(key):
+                key = decrypt_api_key(key)
             # TODO: Implement OAuth2 token refresh if needed
             # For now, assume api_key contains access token or client secret
-            return api_key.api_key
+            return key
         
         return None
     

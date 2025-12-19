@@ -330,9 +330,13 @@ def get_provider_api_key(
             # Fallback to legacy fields for OpenAI (when provider not in ProviderAPIKey table)
             if provider_slug == "openai":
                 # Check tenant-specific first, then system tenant
-                return current_tenant.openai_api_key or (
+                key = current_tenant.openai_api_key or (
                     system_tenant.openai_api_key if system_tenant else None
                 )
+                # Decrypt if encrypted
+                if key and is_encrypted(key):
+                    key = decrypt_api_key(key)
+                return key
             return None
         
         # Try tenant-specific key from ProviderAPIKey table first

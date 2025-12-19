@@ -185,6 +185,9 @@ class AIProviderService:
             if not provider:
                 return None
             
+            # Import decryption utilities
+            from app.core.encryption import decrypt_api_key, is_encrypted
+            
             # Try tenant-specific key first
             if tenant_id:
                 tenant_key = self.db.query(ProviderAPIKey).filter(
@@ -194,7 +197,11 @@ class AIProviderService:
                 ).first()
                 
                 if tenant_key:
-                    return tenant_key.api_key
+                    # Decrypt if encrypted
+                    key = tenant_key.api_key
+                    if key and is_encrypted(key):
+                        key = decrypt_api_key(key)
+                    return key
             
             # Fallback to system-level key
             system_key = self.db.query(ProviderAPIKey).filter(
@@ -204,21 +211,33 @@ class AIProviderService:
             ).first()
             
             if system_key:
-                return system_key.api_key
+                # Decrypt if encrypted
+                key = system_key.api_key
+                if key and is_encrypted(key):
+                    key = decrypt_api_key(key)
+                return key
             
             # For OpenAI provider, fall back to legacy tenant fields
             if provider.slug == "openai" and tenant_id:
                 from app.models.tenant import Tenant
                 tenant = self.db.query(Tenant).filter(Tenant.id == tenant_id).first()
                 if tenant and tenant.openai_api_key:
-                    return tenant.openai_api_key
+                    # Decrypt if encrypted
+                    key = tenant.openai_api_key
+                    if key and is_encrypted(key):
+                        key = decrypt_api_key(key)
+                    return key
                 
                 # Fall back to system tenant
                 system_tenant = self.db.query(Tenant).filter(
                     (Tenant.name == "System") | (Tenant.plan == "system")
                 ).first()
                 if system_tenant and system_tenant.openai_api_key:
-                    return system_tenant.openai_api_key
+                    # Decrypt if encrypted
+                    key = system_tenant.openai_api_key
+                    if key and is_encrypted(key):
+                        key = decrypt_api_key(key)
+                    return key
             
             return None
         

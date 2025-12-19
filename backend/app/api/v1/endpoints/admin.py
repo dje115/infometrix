@@ -1028,6 +1028,10 @@ async def test_openai_api(
         system_tenant = result.scalar_one_or_none()
         if system_tenant and system_tenant.openai_api_key:
             api_key = system_tenant.openai_api_key
+            # Decrypt if encrypted (keys are stored encrypted in database)
+            from app.core.encryption import decrypt_api_key, is_encrypted
+            if api_key and is_encrypted(api_key):
+                api_key = decrypt_api_key(api_key)
         else:
             api_key = os.getenv("OPENAI_API_KEY")
         

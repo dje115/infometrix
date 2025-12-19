@@ -10,6 +10,7 @@ from sqlalchemy.pool import QueuePool, NullPool
 import asyncio
 from typing import AsyncGenerator
 from contextvars import ContextVar
+from pathlib import Path
 
 from app.core.config import settings
 from app.models.base import Base
@@ -103,18 +104,48 @@ async def init_db():
         Base.metadata.create_all(bind=engine, checkfirst=True)
         print("✅ Tables created successfully")
     except Exception as e:
-        # If there are still errors, try to continue anyway
-        # The tables might already exist from a previous run
-        print(f"⚠️  Database initialization note: {str(e)[:200]}")
-        # Verify tables exist by checking for tenants table
+        error_str = str(e).lower()
+        # Handle specific errors gracefully
+        if "duplicate" in error_str or "already exists" in error_str:
+            # Index or constraint already exists - this is fine, continue
+            print(f"⚠️  Some database objects already exist (this is normal): {str(e)[:200]}")
+        else:
+            # Other errors - log but try to continue
+            print(f"⚠️  Database initialization note: {str(e)[:200]}")
+        
+        # Verify critical tables exist
         try:
             with engine.connect() as conn:
-                result = conn.execute(text("SELECT 1 FROM tenants LIMIT 1"))
-                result.fetchone()
-                print("✅ Tables already exist, continuing...")
-        except Exception:
-            # Tables don't exist, but we'll try to continue
-            print("⚠️  Warning: Could not verify tables exist, but continuing initialization...")
+                # Check for quotes table specifically (was missing before)
+                result = conn.execute(text("SELECT 1 FROM information_schema.tables WHERE table_name = 'quotes'"))
+                quotes_exists = result.fetchone() is not None
+                
+                result = conn.execute(text("SELECT 1 FROM information_schema.tables WHERE table_name = 'tenants'"))
+                tenants_exists = result.fetchone() is not None
+                
+                if tenants_exists:
+                    print("✅ Core tables exist, continuing...")
+                    if not quotes_exists:
+                        print("⚠️  Warning: quotes table missing - attempting to create via migration...")
+                        # Try to run the quotes table migration as a fallback
+                        try:
+                            migration_path = Path(__file__).parent.parent.parent / "migrations" / "create_quotes_table.sql"
+                            if migration_path.exists():
+                                with open(migration_path, 'r') as f:
+                                    migration_sql = f.read()
+                                # Execute migration in a transaction
+                                conn.execute(text(migration_sql))
+                                conn.commit()
+                                print("✅ Quotes table created via migration")
+                            else:
+                                print("⚠️  Migration file not found - quotes table will need to be created manually")
+                        except Exception as migration_error:
+                            print(f"⚠️  Could not create quotes table via migration: {migration_error}")
+                            print("⚠️  Please run: bash backend/scripts/run_all_migrations.sh")
+                else:
+                    print("⚠️  Warning: Could not verify tables exist, but continuing initialization...")
+        except Exception as verify_error:
+            print(f"⚠️  Could not verify tables: {verify_error}")
     
     # Create default tenant and super admin
     await create_default_tenant()
