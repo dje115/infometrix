@@ -28,6 +28,42 @@ class DebtorEntityType(enum.Enum):
     COMPANY = "COMPANY"
 
 
+class PartyType(enum.Enum):
+    """Party type - replaces DebtorEntityType"""
+    INDIVIDUAL = "INDIVIDUAL"
+    ORGANISATION = "ORGANISATION"
+
+
+class PartyRoleType(enum.Enum):
+    """Party role in a case"""
+    DEBTOR = "DEBTOR"
+    JOINT_DEBTOR = "JOINT_DEBTOR"
+    GUARANTOR = "GUARANTOR"
+    DIRECTOR = "DIRECTOR"
+    THIRD_PARTY = "THIRD_PARTY"
+    VULNERABLE_PERSON = "VULNERABLE_PERSON"  # Flag/assessment, not a role if preferred
+
+
+class DebtAccountStatus(enum.Enum):
+    """Debt account status"""
+    ACTIVE = "ACTIVE"
+    SETTLED = "SETTLED"
+    DISPUTED = "DISPUTED"
+    STAYED = "STAYED"
+    WRITTEN_OFF = "WRITTEN_OFF"
+
+
+class DebtAccountType(enum.Enum):
+    """Debt account type"""
+    INVOICE = "INVOICE"
+    JUDGMENT = "JUDGMENT"
+    CONTRACT = "CONTRACT"
+    COUNCIL_TAX = "COUNCIL_TAX"
+    BUSINESS_RATES = "BUSINESS_RATES"
+    PARKING_FINE = "PARKING_FINE"
+    OTHER = "OTHER"
+
+
 class CaseStatus(enum.Enum):
     """Case status enumeration"""
     DRAFT = "draft"
@@ -123,7 +159,7 @@ class Debtor(Base):
     is_deleted = Column(Boolean, default=False, nullable=False)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     
-    # Relationships
+    # Relationships (DEPRECATED - use Party model instead)
     cases = relationship("EnforcementCase", back_populates="debtor", cascade="all, delete-orphan")
     
     def __repr__(self):
@@ -166,6 +202,9 @@ class EnforcementClient(Base):
     
     # Relationships
     cases = relationship("EnforcementCase", back_populates="client", cascade="all, delete-orphan")
+    
+    # TODO: Add customer_id FK to link to CRM Customer/Account
+    # customer_id = Column(String(36), ForeignKey("customers.id"), nullable=True, index=True)
     
     def __repr__(self):
         return f"<EnforcementClient {self.name}>"
