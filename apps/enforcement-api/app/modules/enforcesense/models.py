@@ -288,14 +288,17 @@ class CaseNote(Base):
     tenant_id = Column(String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     
     # Note content
-    note_text = Column(Text, nullable=False)
-    note_text_cleaned = Column(Text, nullable=True)  # AI-cleaned version
-    note_summary = Column(Text, nullable=True)  # AI-generated summary
-    risk_flags_extracted = Column(JSON, default=list)  # AI-extracted risk flags
+    note = Column(Text, nullable=False)  # Current note (may be AI-improved)
+    original_note = Column(Text, nullable=True)  # Original note (never changed)
     
-    # Author
-    author_id = Column(String(36), nullable=True)  # Reference to Platform API user ID
-    author_name = Column(String(255), nullable=True)
+    # AI improvements
+    ai_improved_note = Column(Text, nullable=True)  # AI-cleaned version
+    ai_summary = Column(Text, nullable=True)  # AI-generated summary
+    risk_flags = Column(JSON, default=list)  # Risk flags detected by AI
+    ai_processing_status = Column(String(20), default='pending')  # pending, processing, completed, failed
+    
+    # Created by
+    created_by = Column(String(36), nullable=True)  # Reference to Platform API user ID
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
