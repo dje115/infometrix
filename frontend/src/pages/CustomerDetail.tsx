@@ -96,7 +96,7 @@ import CustomerTimeline from '../components/CustomerTimeline';
 import ContactDialog from '../components/ContactDialog';
 import CustomerContractsTab from '../components/CustomerContractsTab';
 import CustomerPatternAnalysis from '../components/CustomerPatternAnalysis';
-import CustomerSLAHistory from '../modules/helpdesk/components/CustomerSLAHistory';
+import CustomerSLAHistory from '../components/CustomerSLAHistory';
 import { sanitizeMarkdownBold } from '../utils/sanitize';
 
 const CustomerDetail: React.FC = () => {
@@ -2191,7 +2191,7 @@ const CustomerDetail: React.FC = () => {
       {currentTab === 7 && customer && (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           <ActivityCenter customerId={customer.id} />
-          <Box sx={{ width: '100%' }}>
+          <Box sx={{ width: '100%', mt: 3 }}>
             <CustomerTimeline customerId={customer.id} limit={30} />
           </Box>
         </Box>

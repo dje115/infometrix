@@ -61,9 +61,6 @@ const KnowledgeBase = lazy(() => import('./modules/helpdesk/pages/KnowledgeBase'
 const TicketTemplates = lazy(() => import('./modules/helpdesk/pages/TicketTemplates'));
 const TicketMacros = lazy(() => import('./modules/helpdesk/pages/TicketMacros'));
 const Compliance = lazy(() => import('./pages/Compliance'));
-const EnforceSenseDashboard = lazy(() => import('./modules/enforcesense/pages/EnforceSenseDashboard'));
-const EnforceSenseCases = lazy(() => import('./modules/enforcesense/pages/Cases'));
-const EnforceSenseReports = lazy(() => import('./modules/enforcesense/pages/Reports'));
 
 // Loading fallback component
 const LoadingFallback = () => (
@@ -486,30 +483,6 @@ function App() {
             element={
               <ProtectedRoute>
                 <TicketMacros />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/enforcesense"
-            element={
-              <ProtectedRoute>
-                <EnforceSenseDashboard />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/enforcesense/cases"
-            element={
-              <ProtectedRoute>
-                <EnforceSenseCases />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/enforcesense/reports"
-            element={
-              <ProtectedRoute>
-                <EnforceSenseReports />
               </ProtectedRoute>
             }
           />

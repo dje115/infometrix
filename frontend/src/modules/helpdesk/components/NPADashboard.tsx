@@ -30,7 +30,7 @@ import {
   Schedule as ScheduleIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-import { helpdeskAPI } from '../../../services/api';
+import { helpdeskAPI } from '../services/api';
 
 const NPADashboard: React.FC = () => {
   const navigate = useNavigate();

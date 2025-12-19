@@ -30,7 +30,7 @@ import {
   Download as DownloadIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-import { slaAPI, helpdeskAPI } from '../../../services/api';
+import { slaAPI, helpdeskAPI } from '../services/api';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS,

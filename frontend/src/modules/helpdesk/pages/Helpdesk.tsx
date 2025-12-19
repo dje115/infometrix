@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import CrossCustomerPatternAnalysis from '../../../components/CrossCustomerPatternAnalysis';
+import CrossCustomerPatternAnalysis from '../components/CrossCustomerPatternAnalysis';
 import {
   Container,
   Box,
@@ -39,7 +39,7 @@ import {
   TrendingUp as TrendingUpIcon
 } from '@mui/icons-material';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { helpdeskAPI, customerAPI } from '../../../services/api';
+import { helpdeskAPI, customerAPI } from '../services/api';
 import TicketComposer from '../components/TicketComposer';
 import TicketBulkActions from '../components/TicketBulkActions';
 import Checkbox from '@mui/material/Checkbox';

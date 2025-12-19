@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { sanitizeText } from '../../../utils/sanitize';
+import { sanitizeText } from '../utils/sanitize';
 import {
   Container,
   Paper,
@@ -70,19 +70,19 @@ import {
   Link as LinkIcon
 } from '@mui/icons-material';
 import { useNavigate, useParams } from 'react-router-dom';
-import { helpdeskAPI, slaAPI } from '../../../services/api';
-import TicketKBAnswer from '../../components/TicketKBAnswer';
-import TicketNPA from '../../components/TicketNPA';
-import TicketChatbot from '../../components/TicketChatbot';
-import TicketTemplateSelector from '../../components/TicketTemplateSelector';
-import QuickReplyMenu from '../../../components/QuickReplyMenu';
-import KeyboardShortcutsHelp from '../../../components/KeyboardShortcutsHelp';
-import TicketMacroMenu from '../../components/TicketMacroMenu';
-import TicketMergeDialog from '../../components/TicketMergeDialog';
-import TicketLinkDialog from '../../components/TicketLinkDialog';
-import TimeTrackingDialog from '../../../components/TimeTrackingDialog';
-import CustomerPatternAnalysis from '../../../components/CustomerPatternAnalysis';
-import { useKeyboardShortcuts, KeyboardShortcut } from '../../../hooks/useKeyboardShortcuts';
+import { helpdeskAPI, slaAPI } from '../services/api';
+import TicketKBAnswer from '../components/TicketKBAnswer';
+import TicketNPA from '../components/TicketNPA';
+import TicketChatbot from '../components/TicketChatbot';
+import TicketTemplateSelector from '../components/TicketTemplateSelector';
+import QuickReplyMenu from '../components/QuickReplyMenu';
+import KeyboardShortcutsHelp from '../components/KeyboardShortcutsHelp';
+import TicketMacroMenu from '../components/TicketMacroMenu';
+import TicketMergeDialog from '../components/TicketMergeDialog';
+import TicketLinkDialog from '../components/TicketLinkDialog';
+import TimeTrackingDialog from '../components/TimeTrackingDialog';
+import CustomerPatternAnalysis from '../components/CustomerPatternAnalysis';
+import { useKeyboardShortcuts, KeyboardShortcut } from '../hooks/useKeyboardShortcuts';
 
 const TicketDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();

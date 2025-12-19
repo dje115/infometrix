@@ -25,7 +25,7 @@ import {
   Build as BuildIcon,
   CheckCircle as CheckCircleIcon
 } from '@mui/icons-material';
-import { helpdeskAPI } from '../../../services/api';
+import { helpdeskAPI } from '../services/api';
 
 interface TicketMacro {
   id: string;

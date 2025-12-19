@@ -33,7 +33,7 @@ import {
   FilterList as FilterIcon,
   DateRange as DateRangeIcon
 } from '@mui/icons-material';
-import { slaAPI, customerAPI } from '../../../services/api';
+import { slaAPI, customerAPI } from '../services/api';
 
 interface ReportConfig {
   reportType: 'sla_compliance' | 'customer_sla' | 'agent_performance' | 'breach_analysis' | 'trends';

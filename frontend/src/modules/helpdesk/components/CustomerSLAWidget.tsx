@@ -27,7 +27,7 @@ import {
   Flag as FlagIcon,
   OpenInNew as OpenInNewIcon
 } from '@mui/icons-material';
-import { slaAPI } from '../../../services/api';
+import { slaAPI } from '../services/api';
 import { useNavigate } from 'react-router-dom';
 
 interface CustomerSLAWidgetProps {

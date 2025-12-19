@@ -47,7 +47,7 @@ export const CORE_NAVIGATION_GROUPS: MenuGroup[] = [
     items: [
       { text: 'Quotes', icon: 'Description', path: '/quotes' },
       { text: 'Contracts', icon: 'Description', path: '/contracts' },
-      { text: 'Contract Templates', icon: 'Description', path: '/contract-templates' },
+      { text: 'Contract Templates', icon: 'Description', path: '/contracts/templates' },
     ]
   },
   {

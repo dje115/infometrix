@@ -36,7 +36,7 @@ import {
   Download as DownloadIcon,
   Refresh as RefreshIcon
 } from '@mui/icons-material';
-import { helpdeskAPI, slaAPI } from '../../../services/api';
+import { helpdeskAPI, slaAPI } from '../services/api';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS,

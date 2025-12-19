@@ -5,7 +5,7 @@ Main API router for v1
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, tenants, users, customers, contacts, leads, campaigns, quotes, settings, translation, ai_analysis, admin, dashboard, activities, sectors, campaign_monitor, planning, ai_prompts, products, version, websocket, suppliers, product_search, building_analysis, pricing_import, provider_keys, emails, storage, pricing_config, support_contracts, contract_renewals, dynamic_pricing, helpdesk, reporting, sla, revenue, customer_portal, customer_portal_access, trends, metrics, quote_prompts, opportunities, contracts, quote_documents, whatsapp, compliance, security, modules
+from app.api.v1.endpoints import auth, tenants, users, customers, contacts, leads, campaigns, quotes, settings, translation, ai_analysis, admin, dashboard, activities, sectors, campaign_monitor, planning, ai_prompts, products, version, websocket, suppliers, product_search, building_analysis, pricing_import, provider_keys, emails, storage, pricing_config, support_contracts, contract_renewals, dynamic_pricing, helpdesk, reporting, sla, revenue, customer_portal, customer_portal_access, trends, metrics, quote_prompts, opportunities, contracts, quote_documents, whatsapp, compliance, security, compliance
 
 # Import module system
 from app.modules import get_module_registry
@@ -62,7 +62,6 @@ api_router.include_router(version.router, tags=["version"])
 api_router.include_router(websocket.router, tags=["websocket"])
 api_router.include_router(trends.router)
 api_router.include_router(metrics.router)
-api_router.include_router(modules.router, prefix="/modules", tags=["modules"])
 
 # Register module routes
 # Modules are registered conditionally based on feature flags

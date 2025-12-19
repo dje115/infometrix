@@ -3,7 +3,7 @@
     <el-container>
       <el-header>
         <div class="header-content">
-          <h1>Infometrix Admin Portal</h1>
+          <h1>CCS Admin Portal</h1>
           <el-button @click="logout" type="danger" plain>
             <el-icon><SwitchButton /></el-icon>
             Logout

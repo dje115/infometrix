@@ -4,19 +4,49 @@ import {
   Drawer,
   AppBar,
   Toolbar,
+  List,
   Typography,
   Divider,
   IconButton,
+  ListItem,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
   Avatar,
   Menu,
   MenuItem,
-  CircularProgress,
-  Alert
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Collapse
 } from '@mui/material';
 import {
   Menu as MenuIcon,
+  Dashboard as DashboardIcon,
+  People as PeopleIcon,
+  TrendingUp as LeadsIcon,
+  PersonAdd as PersonAddIcon,
+  Campaign as CampaignIcon,
+  Description as QuotesIcon,
+  Settings as SettingsIcon,
   Logout as LogoutIcon,
   AccountCircle,
+  Group as GroupIcon,
+  Business as CompetitorsIcon,
+  Security as SecurityIcon,
+  Architecture as ArchitectureIcon,
+  LocalShipping as LocalShippingIcon,
+  Psychology as PsychologyIcon,
+  Support as SupportIcon,
+  Timeline as TimelineIcon,
+  Assessment as AssessmentIcon,
+  Work as OpportunitiesIcon,
+  Description as ContractsIcon,
+  Assignment as AssignmentIcon,
+  Description as TemplateIcon,
+  Build as MacroIcon,
+  ExpandMore as ExpandMoreIcon,
+  Gavel as GavelIcon
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -25,11 +55,8 @@ import GlobalAIMonitor from './GlobalAIMonitor';
 import AIMonitorBadge from './AIMonitorBadge';
 import OnboardingTooltips from './OnboardingTooltips';
 import VersionDisplay from './VersionDisplay';
-import ModuleSwitcher from './ModuleSwitcher';
-import ModuleContextMenu from './ModuleContextMenu';
 import { settingsAPI } from '../services/api';
-import { useModules } from '../modules/hooks/useModules';
-import { useActiveModule } from '../modules/hooks/useActiveModule';
+import { CORE_NAVIGATION_GROUPS, MenuGroup } from '../types/modules';
 
 const drawerWidth = 240;
 
@@ -46,12 +73,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [showOnboardingTooltips, setShowOnboardingTooltips] = useState(false);
 
   const user = JSON.parse(localStorage.getItem('user') || '{}');
-  const userPermissions = user.permissions || [];
-  const isAdmin = user.role === 'super_admin' || user.role === 'admin' || user.role === 'tenant_admin';
-
-  // Get modules and active module
-  const { enabledModules, loading: modulesLoading, error: modulesError } = useModules(userPermissions, isAdmin);
-  const { activeModule } = useActiveModule();
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -81,6 +102,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                               typeof data.company_analysis === 'object' && 
                               Object.keys(data.company_analysis).length > 0);
       
+      // Check if user has seen tooltips before
+      const hasSeenTooltips = localStorage.getItem('onboarding-tooltips-seen');
+      
       // Show tooltips if no AI analysis (regardless of whether user has seen them before)
       if (!hasAIAnalysis && user.email) {
         setShowOnboardingTooltips(true);
@@ -107,23 +131,65 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     localStorage.setItem('onboarding-tooltips-seen', 'true');
   };
 
-  // Get page title from current route
-  const getPageTitle = () => {
-    // Try to find title from active module's nav items
-    if (activeModule && enabledModules.length > 0) {
-      const module = enabledModules.find(m => m.key === activeModule);
-      if (module) {
-        const navItem = module.navItems.find(item => {
-          if (item.path === location.pathname) return true;
-          if (!item.path.endsWith('/') && location.pathname.startsWith(item.path + '/')) return true;
-          return false;
-        });
-        if (navItem) {
-          return navItem.text;
-        }
-      }
+  // Map icon names to icon components
+  const getIconComponent = (iconName: string) => {
+    const iconMap: { [key: string]: React.ReactElement } = {
+      Dashboard: <DashboardIcon />,
+      People: <PeopleIcon />,
+      PersonAdd: <PersonAddIcon />,
+      TrendingUp: <LeadsIcon />,
+      Work: <OpportunitiesIcon />,
+      Architecture: <ArchitectureIcon />,
+      Campaign: <CampaignIcon />,
+      Description: <QuotesIcon />,
+      Support: <SupportIcon />,
+      Assessment: <AssessmentIcon />,
+      Assignment: <AssignmentIcon />,
+      Psychology: <PsychologyIcon />,
+      Build: <MacroIcon />,
+      Settings: <SettingsIcon />,
+      Group: <GroupIcon />,
+      Security: <SecurityIcon />,
+      LocalShipping: <LocalShippingIcon />,
+      Business: <CompetitorsIcon />,
+      Timeline: <TimelineIcon />,
+      Gavel: <GavelIcon />,
+      Folder: <AssignmentIcon />,
+    };
+    return iconMap[iconName] || <DashboardIcon />;
+  };
+
+  // Get user info for permission checks
+  const isAdmin = user.role === 'super_admin' || user.role === 'admin' || user.role === 'tenant_admin';
+  
+  // For now, assume all feature flags are enabled (can be enhanced later to check tenant feature flags)
+  const featureFlags: { [key: string]: boolean } = {
+    QUOTING_ENABLED: true,
+    HELPDESK_ENABLED: true,
+    ENFORCESENSE_ENABLED: false, // Can be enabled when module is ready
+  };
+
+  // Filter navigation groups by feature flags and permissions
+  const filteredGroups = CORE_NAVIGATION_GROUPS.filter((group: MenuGroup) => {
+    // Check feature flag if present
+    if (group.featureFlag && !featureFlags[group.featureFlag]) {
+      return false;
     }
-    return 'Infometrix';
+    return true;
+  });
+
+  const [expandedGroups, setExpandedGroups] = useState<{ [key: string]: boolean }>({
+    'sales-crm': true,
+    'quoting': true,
+    'helpdesk': true,
+    'settings': false,
+  });
+
+  const handleGroupToggle = (groupId: string) => {
+    setExpandedGroups(prev => ({
+      ...prev,
+      [groupId]: !prev[groupId]
+    }));
   };
 
   const drawer = (
@@ -134,39 +200,98 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         </Typography>
       </Toolbar>
       <Divider />
-      
-      {/* Module Switcher - at top of drawer */}
-      {modulesLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
-          <CircularProgress size={24} />
-        </Box>
-      ) : modulesError ? (
-        <Box sx={{ p: 2 }}>
-          <Alert severity="warning" sx={{ fontSize: '0.75rem' }}>
-            Failed to load modules
-          </Alert>
-        </Box>
-      ) : enabledModules.length > 0 ? (
-        <>
-          <ModuleSwitcher enabledModules={enabledModules} />
-          <Divider />
-          
-          {/* Context Menu - shows nav items for active module */}
-          <ModuleContextMenu
-            moduleKey={activeModule}
-            userPermissions={userPermissions}
-            isAdmin={isAdmin}
-          />
-        </>
-      ) : (
-        <Box sx={{ p: 2 }}>
-          <Typography variant="body2" color="text.secondary">
-            No modules available
-          </Typography>
-        </Box>
-      )}
-      
-      <Divider />
+      <List sx={{ width: '100%', p: 0 }}>
+        {filteredGroups.map((group: MenuGroup) => {
+          // Filter items by permissions and admin access
+          const filteredItems = group.items.filter((item) => {
+            if (item.adminOnly && !isAdmin) {
+              return false;
+            }
+            // TODO: Check permissions when permission system is fully implemented
+            // if (item.permission && !user.permissions?.includes(item.permission)) {
+            //   return false;
+            // }
+            return true;
+          });
+
+          if (filteredItems.length === 0) {
+            return null;
+          }
+
+          // Check if current path matches any item in this group
+          const isGroupActive = filteredItems.some(item => location.pathname === item.path || location.pathname.startsWith(item.path + '/'));
+
+          return (
+            <Accordion
+              key={group.id}
+              expanded={expandedGroups[group.id] ?? false}
+              onChange={() => handleGroupToggle(group.id)}
+              sx={{
+                boxShadow: 'none',
+                '&:before': { display: 'none' },
+                borderBottom: '1px solid rgba(0, 0, 0, 0.12)',
+                '&.Mui-expanded': {
+                  margin: 0,
+                },
+              }}
+            >
+              <AccordionSummary
+                expandIcon={<ExpandMoreIcon />}
+                sx={{
+                  minHeight: 48,
+                  '&.Mui-expanded': {
+                    minHeight: 48,
+                  },
+                  bgcolor: isGroupActive ? 'action.selected' : 'transparent',
+                  '&:hover': {
+                    bgcolor: 'action.hover',
+                  },
+                }}
+              >
+                <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                  {group.label}
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails sx={{ p: 0 }}>
+                <List sx={{ width: '100%', p: 0 }}>
+                  {filteredItems.map((item) => (
+                    <ListItem key={item.path} disablePadding>
+                      <ListItemButton
+                        selected={location.pathname === item.path || location.pathname.startsWith(item.path + '/')}
+                        onClick={() => navigate(item.path)}
+                        sx={{
+                          pl: 4,
+                          '&.Mui-selected': {
+                            bgcolor: 'primary.main',
+                            color: 'primary.contrastText',
+                            '&:hover': {
+                              bgcolor: 'primary.dark',
+                            },
+                            '& .MuiListItemIcon-root': {
+                              color: 'primary.contrastText',
+                            },
+                          },
+                        }}
+                      >
+                        <ListItemIcon sx={{ minWidth: 40 }}>
+                          {getIconComponent(item.icon)}
+                        </ListItemIcon>
+                        <ListItemText 
+                          primary={item.text} 
+                          primaryTypographyProps={{
+                            variant: 'body2',
+                            sx: { fontWeight: location.pathname === item.path ? 600 : 400 }
+                          }}
+                        />
+                      </ListItemButton>
+                    </ListItem>
+                  ))}
+                </List>
+              </AccordionDetails>
+            </Accordion>
+          );
+        })}
+      </List>
     </div>
   );
 
@@ -190,7 +315,16 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             <MenuIcon />
           </IconButton>
           <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
-            {getPageTitle()}
+            {(() => {
+              // Find current page title from navigation groups
+              for (const group of filteredGroups) {
+                const item = group.items.find(item => 
+                  location.pathname === item.path || location.pathname.startsWith(item.path + '/')
+                );
+                if (item) return item.text;
+              }
+              return 'Infometrix';
+            })()}
           </Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <AIMonitorBadge />
@@ -294,3 +428,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 };
 
 export default Layout;
+
+
+

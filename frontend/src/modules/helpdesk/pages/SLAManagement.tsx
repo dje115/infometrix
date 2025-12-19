@@ -40,7 +40,7 @@ import {
   Settings as SettingsIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-import { slaAPI } from '../../../services/api';
+import { slaAPI } from '../services/api';
 
 interface SLAPolicy {
   id: string;

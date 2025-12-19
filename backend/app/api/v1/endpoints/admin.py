@@ -1052,13 +1052,21 @@ async def test_openai_api(
         return {"success": False, "message": f"Connection failed: {str(e)}"}
 
 
+class TestCompaniesHouseRequest(BaseModel):
+    companies_house_api_key: Optional[str] = None
+
+
 @router.post("/test-companies-house")
 async def test_companies_house_api(
+    request: Optional[TestCompaniesHouseRequest] = None,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Test Companies House API connection using database keys (with env fallback)
+    Test Companies House API connection
+    
+    If companies_house_api_key is provided in the request body, tests that key.
+    Otherwise, uses database keys (System tenant) or environment fallback.
     
     PERFORMANCE: Uses AsyncSession to prevent blocking the event loop.
     """
@@ -1070,22 +1078,32 @@ async def test_companies_house_api(
         import httpx
         from base64 import b64encode
         
-        # Check database first (System tenant only), then fall back to environment
+        # Use provided key from request body, or check database/environment
         api_key = None
-        stmt = select(Tenant).where(
-            (Tenant.name == "System") | (Tenant.plan == "system")
-        )
-        result = await db.execute(stmt)
-        system_tenant = result.scalar_one_or_none()
-        if system_tenant and system_tenant.companies_house_api_key:
-            api_key = system_tenant.companies_house_api_key
-        else:
-            api_key = os.getenv("COMPANIES_HOUSE_API_KEY")
+        if request and request.companies_house_api_key:
+            api_key = request.companies_house_api_key.strip()
+        
+        if not api_key:
+            # Check database first (System tenant only), then fall back to environment
+            stmt = select(Tenant).where(
+                (Tenant.name == "System") | (Tenant.plan == "system")
+            )
+            result = await db.execute(stmt)
+            system_tenant = result.scalar_one_or_none()
+            if system_tenant and system_tenant.companies_house_api_key:
+                api_key = system_tenant.companies_house_api_key
+                # Decrypt if encrypted (keys are stored encrypted in database)
+                from app.core.encryption import decrypt_api_key, is_encrypted
+                if api_key and is_encrypted(api_key):
+                    api_key = decrypt_api_key(api_key)
+            else:
+                api_key = os.getenv("COMPANIES_HOUSE_API_KEY")
         
         if not api_key:
             return {"success": False, "message": "Companies House API key not configured"}
         
         # Test with a simple search
+        # Companies House API requires Basic Auth: base64(api_key:)
         credentials = b64encode(f"{api_key}:".encode()).decode()
         async with httpx.AsyncClient() as client:
             response = await client.get(
@@ -1096,21 +1114,52 @@ async def test_companies_house_api(
             
             if response.status_code == 200:
                 return {"success": True, "message": "Companies House API connection successful"}
+            elif response.status_code == 401:
+                # Provide detailed error for authentication failures
+                error_detail = "Invalid API key"
+                try:
+                    error_data = response.json()
+                    if isinstance(error_data, dict):
+                        error_detail = error_data.get("error", error_data.get("message", "Invalid API key"))
+                except:
+                    pass
+                
+                detailed_message = f"API returned status 401 (Unauthorized): {error_detail}"
+                detailed_message += " (Check: API key format, key validity, or get a new key from Companies House)"
+                logger.warning(f"Companies House API authentication failed: {error_detail}")
+                return {"success": False, "message": detailed_message, "status": 401}
             else:
-                return {"success": False, "message": f"API returned status {response.status_code}"}
+                error_message = f"API returned status {response.status_code}"
+                try:
+                    error_data = response.json()
+                    if isinstance(error_data, dict):
+                        error_detail = error_data.get("error", error_data.get("message", ""))
+                        if error_detail:
+                            error_message += f": {error_detail}"
+                except:
+                    pass
+                return {"success": False, "message": error_message}
                 
     except Exception as e:
         logger.error(f"Companies House API test failed: {e}", exc_info=True)
         return {"success": False, "message": f"Connection failed: {str(e)}"}
 
 
+class TestGoogleMapsRequest(BaseModel):
+    google_maps_api_key: Optional[str] = None
+
+
 @router.post("/test-google-maps")
 async def test_google_maps_api(
+    request: Optional[TestGoogleMapsRequest] = None,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Test Google Maps API connection using database keys (with env fallback)
+    Test Google Maps API connection
+    
+    If google_maps_api_key is provided in the request body, tests that key.
+    Otherwise, uses database keys (System tenant) or environment fallback.
     
     PERFORMANCE: Uses AsyncSession to prevent blocking the event loop.
     """
@@ -1121,17 +1170,26 @@ async def test_google_maps_api(
         import os
         import httpx
         
-        # Check database first (System tenant only), then fall back to environment
+        # Use provided key from request body, or check database/environment
         api_key = None
-        stmt = select(Tenant).where(
-            (Tenant.name == "System") | (Tenant.plan == "system")
-        )
-        result = await db.execute(stmt)
-        system_tenant = result.scalar_one_or_none()
-        if system_tenant and system_tenant.google_maps_api_key:
-            api_key = system_tenant.google_maps_api_key
-        else:
-            api_key = os.getenv("GOOGLE_MAPS_API_KEY")
+        if request and request.google_maps_api_key:
+            api_key = request.google_maps_api_key.strip()
+        
+        if not api_key:
+            # Check database first (System tenant only), then fall back to environment
+            stmt = select(Tenant).where(
+                (Tenant.name == "System") | (Tenant.plan == "system")
+            )
+            result = await db.execute(stmt)
+            system_tenant = result.scalar_one_or_none()
+            if system_tenant and system_tenant.google_maps_api_key:
+                api_key = system_tenant.google_maps_api_key
+                # Decrypt if encrypted (keys are stored encrypted in database)
+                from app.core.encryption import decrypt_api_key, is_encrypted
+                if api_key and is_encrypted(api_key):
+                    api_key = decrypt_api_key(api_key)
+            else:
+                api_key = os.getenv("GOOGLE_MAPS_API_KEY")
         
         if not api_key:
             return {"success": False, "message": "Google Maps API key not configured"}
@@ -1146,12 +1204,31 @@ async def test_google_maps_api(
             
             if response.status_code == 200:
                 data = response.json()
-                if data.get("status") == "OK":
+                status = data.get("status")
+                error_message = data.get("error_message")
+                
+                if status == "OK":
                     return {"success": True, "message": "Google Maps API connection successful"}
                 else:
-                    return {"success": False, "message": f"API error: {data.get('status')}"}
+                    # Provide detailed error message from Google
+                    detailed_message = f"API error: {status}"
+                    if error_message:
+                        detailed_message += f" - {error_message}"
+                    
+                    # Add helpful troubleshooting based on status
+                    if status == "REQUEST_DENIED":
+                        detailed_message += " (Check: API key restrictions, billing enabled, Geocoding API enabled)"
+                    elif status == "INVALID_REQUEST":
+                        detailed_message += " (Check: API key format and validity)"
+                    elif status == "OVER_QUERY_LIMIT":
+                        detailed_message += " (Check: Quota limits and billing)"
+                    elif status == "ZERO_RESULTS":
+                        detailed_message += " (Address not found, but API is working)"
+                    
+                    logger.warning(f"Google Maps API test failed: {status} - {error_message}")
+                    return {"success": False, "message": detailed_message, "status": status, "error_message": error_message}
             else:
-                return {"success": False, "message": f"API returned status {response.status_code}"}
+                return {"success": False, "message": f"API returned status {response.status_code}: {response.text[:200]}"}
                 
     except Exception as e:
         logger.error(f"Google Maps API test failed: {e}", exc_info=True)

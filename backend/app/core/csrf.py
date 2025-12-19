@@ -119,8 +119,10 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         # Check if path starts with any public endpoint OR if it's an admin endpoint
         is_public = any(request.url.path.startswith(endpoint) for endpoint in self.PUBLIC_ENDPOINTS)
         is_admin_endpoint = request.url.path.startswith("/api/v1/admin/")
+        # Provider keys endpoints are admin-managed and require authentication, so exempt from CSRF
+        is_provider_keys_endpoint = request.url.path.startswith("/api/v1/provider-keys/")
         
-        if is_public or is_admin_endpoint:
+        if is_public or is_admin_endpoint or is_provider_keys_endpoint:
             response = await call_next(request)
             return response
         

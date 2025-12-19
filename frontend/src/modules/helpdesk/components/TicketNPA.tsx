@@ -56,7 +56,7 @@ import {
   Done as DoneIcon,
   NavigateNext as NavigateNextIcon
 } from '@mui/icons-material';
-import { helpdeskAPI } from '../../../services/api';
+import { helpdeskAPI } from '../services/api';
 import { DateTimePicker } from '@mui/x-date-pickers';
 import { LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';

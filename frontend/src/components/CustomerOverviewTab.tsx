@@ -36,7 +36,7 @@ import {
 } from '@mui/icons-material';
 import ContactDetailDialog from './ContactDetailDialog';
 import CustomerHealthWidget from './CustomerHealthWidget';
-import CustomerSLAWidget from '../modules/helpdesk/components/CustomerSLAWidget';
+import CustomerSLAWidget from './CustomerSLAWidget';
 import CustomerTimeline from './CustomerTimeline';
 import { useNavigate } from 'react-router-dom';
 

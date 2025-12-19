@@ -175,8 +175,7 @@ async def create_default_tenant():
                 }
             },
             plan="enterprise",
-            api_limit_monthly=100000,
-            enabled_modules=["crm", "helpdesk"]  # Default enabled modules
+            api_limit_monthly=100000
         )
         
         session.add(tenant)
@@ -264,8 +263,7 @@ async def create_system_tenant():
             openai_api_key=_encrypt_if_present(settings.OPENAI_API_KEY),
             companies_house_api_key=_encrypt_if_present(settings.COMPANIES_HOUSE_API_KEY),
             google_maps_api_key=_encrypt_if_present(settings.GOOGLE_MAPS_API_KEY),
-            api_limit_monthly=100000,
-            enabled_modules=["crm"]  # System tenant only needs CRM
+            api_limit_monthly=100000
         )
         
         session.add(tenant)

@@ -489,7 +489,8 @@ const ActivityCenter: React.FC<Props> = ({ customerId }) => {
                 xs: 12,
                 sm: 12,
                 md: 4,
-                lg: 4
+                lg: 4,
+                xl: 4
               }}>
               <ActionBanner
                 title="Call Suggestion"
@@ -504,7 +505,8 @@ const ActivityCenter: React.FC<Props> = ({ customerId }) => {
                 xs: 12,
                 sm: 12,
                 md: 4,
-                lg: 4
+                lg: 4,
+                xl: 4
               }}>
               <ActionBanner
                 title="Email Suggestion"
@@ -519,7 +521,8 @@ const ActivityCenter: React.FC<Props> = ({ customerId }) => {
                 xs: 12,
                 sm: 12,
                 md: 4,
-                lg: 4
+                lg: 4,
+                xl: 4
               }}>
               <ActionBanner
                 title="Visit Suggestion"

@@ -52,22 +52,12 @@ class ModuleRegistry:
         if not module:
             return False
         
-        # Modules without feature flags are always enabled
-        if not hasattr(module, 'feature_flag') or not module.feature_flag:
-            return True
-        
         # Check feature flag (default to False if not set)
         flag_value = tenant_feature_flags.get(module.feature_flag, False)
         return bool(flag_value)
     
     def get_enabled_modules(self, tenant_feature_flags: Dict[str, bool]) -> List[BaseModule]:
-        """
-        Get all enabled modules for a tenant.
-        
-        Includes:
-        - Modules without feature flags (always enabled)
-        - Modules with feature flags that are enabled
-        """
+        """Get all enabled modules for a tenant"""
         enabled = []
         for module in self._modules.values():
             if self.is_module_enabled(module.module_id, tenant_feature_flags):

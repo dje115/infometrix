@@ -13,6 +13,7 @@ import os
 from openai import OpenAI
 import googlemaps
 import httpx
+import json
 
 from app.core.database import get_async_db
 from app.core.dependencies import get_current_user, check_permission, get_current_tenant
@@ -1016,7 +1017,6 @@ If information is missing or unclear, make reasonable inferences based on the co
             )
             
             result_text = response.content
-            import json
             result = json.loads(result_text)
         except HTTPException:
             raise

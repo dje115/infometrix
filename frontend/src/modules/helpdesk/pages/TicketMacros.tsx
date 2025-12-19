@@ -37,7 +37,7 @@ import {
   ExpandMore as ExpandMoreIcon,
   PlayArrow as PlayIcon
 } from '@mui/icons-material';
-import { helpdeskAPI } from '../../../services/api';
+import { helpdeskAPI } from '../services/api';
 
 interface MacroAction {
   type: string;

@@ -3,7 +3,7 @@
 API endpoints for AI provider key management
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_
 from typing import List, Optional
@@ -172,7 +172,7 @@ async def test_provider_key(
     current_user: User = Depends(get_current_user),
     current_tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_async_db),
-    is_system: bool = False
+    is_system: bool = Query(False, description="Set to true for system-level key")
 ):
     """
     Test a provider API key
@@ -280,7 +280,7 @@ async def save_provider_key(
     current_user: User = Depends(get_current_user),
     current_tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_async_db),
-    is_system: bool = False  # Query param: true for system-level key
+    is_system: bool = Query(False, description="Set to true for system-level key")
 ):
     """
     Save or update provider API key
@@ -468,7 +468,7 @@ async def delete_provider_key(
     current_user: User = Depends(get_current_user),
     current_tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_async_db),
-    is_system: bool = False
+    is_system: bool = Query(False, description="Set to true for system-level key")
 ):
     """
     Delete provider API key

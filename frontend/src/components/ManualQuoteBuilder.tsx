@@ -593,19 +593,22 @@ const ManualQuoteBuilder: React.FC<ManualQuoteBuilderProps> = ({
                     onClick={(event) => handleRowClick(index, event)}
                     sx={{ '& td': { borderTop: 'none' } }}
                   >
-                    <TableCell sx={{ width: '120px', minWidth: '120px' }}>
+                    <TableCell sx={{ width: '150px', minWidth: '150px' }}>
                       <TextField
                         size="small"
                         placeholder="Part number"
                         fullWidth
                         value={item.part_number || ''}
                         onChange={(event) => handleFieldChange(index, 'part_number', event.target.value)}
-                        inputProps={{ style: { fontSize: '0.875rem' } }}
+                        inputProps={{ 
+                          style: { fontSize: '0.875rem' },
+                          maxLength: 20
+                        }}
                         sx={{
                           '& .MuiInputBase-input': {
                             padding: '6px 8px',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis'
+                            overflow: 'visible',
+                            textOverflow: 'clip'
                           }
                         }}
                       />
@@ -621,8 +624,8 @@ const ManualQuoteBuilder: React.FC<ManualQuoteBuilderProps> = ({
                         sx={{
                           '& .MuiInputBase-input': {
                             padding: '6px 8px',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis'
+                            overflow: 'visible',
+                            textOverflow: 'clip'
                           }
                         }}
                       />
@@ -643,18 +646,22 @@ const ManualQuoteBuilder: React.FC<ManualQuoteBuilderProps> = ({
                         onChange={(event) => handleFieldChange(index, 'quantity', Number(event.target.value))}
                       />
                     </TableCell>
-                    <TableCell sx={{ width: '100px', minWidth: '100px' }}>
+                    <TableCell sx={{ width: '120px', minWidth: '120px' }}>
                       <TextField
                         size="small"
                         type="number"
                         fullWidth
-                        inputProps={{ min: 0, step: 0.01, style: { fontSize: '0.875rem', textAlign: 'right' } }}
+                        inputProps={{ 
+                          min: 0, 
+                          step: 0.01, 
+                          style: { fontSize: '0.875rem', textAlign: 'right' } 
+                        }}
                         sx={{
                           ...numberInputSx,
                           '& .MuiInputBase-input': {
                             padding: '6px 8px',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis'
+                            overflow: 'visible',
+                            textOverflow: 'clip'
                           }
                         }}
                         value={item.unit_cost ?? 0}

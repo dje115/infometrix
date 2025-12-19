@@ -36,7 +36,7 @@ import {
   Visibility as ViewIcon,
   Search as SearchIcon
 } from '@mui/icons-material';
-import { helpdeskAPI } from '../../../services/api';
+import { helpdeskAPI } from '../services/api';
 
 interface KnowledgeBaseArticle {
   id: string;

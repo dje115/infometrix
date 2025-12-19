@@ -26,7 +26,7 @@ import {
   TrendingDown as TrendingDownIcon,
   Download as DownloadIcon
 } from '@mui/icons-material';
-import { slaAPI } from '../../../services/api';
+import { slaAPI } from '../services/api';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,

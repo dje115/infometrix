@@ -27,7 +27,7 @@ import {
   Article as ArticleIcon,
   Refresh as RefreshIcon
 } from '@mui/icons-material';
-import { helpdeskAPI } from '../../../services/api';
+import { helpdeskAPI } from '../services/api';
 
 interface TicketKBAnswerProps {
   ticketId: string;

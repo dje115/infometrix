@@ -40,7 +40,7 @@ import {
   Send as SendIcon,
   CompareArrows as CompareIcon
 } from '@mui/icons-material';
-import { helpdeskAPI, customerAPI } from '../../../services/api';
+import { helpdeskAPI, customerAPI } from '../services/api';
 // Using a simple diff view instead of Monaco Editor for better compatibility
 
 interface TicketComposerProps {

@@ -707,9 +707,18 @@ export default {
       testing[normalizedType] = true
       try {
         const token = localStorage.getItem('admin_token')
-        const response = await axios.post(`http://localhost:8000/api/v1/admin/test-${apiType}`, {}, {
+        // Send the API key from the form if available
+        const requestBody = {}
+        if (apiType === 'google-maps' && apiKeys.google_maps_api_key) {
+          requestBody.google_maps_api_key = apiKeys.google_maps_api_key
+        } else if (apiType === 'companies-house' && apiKeys.companies_house_api_key) {
+          requestBody.companies_house_api_key = apiKeys.companies_house_api_key
+        }
+        
+        const response = await axios.post(`http://localhost:8000/api/v1/admin/test-${apiType}`, requestBody, {
           headers: {
-            'Authorization': `Bearer ${token}`
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
           },
           withCredentials: true
         })

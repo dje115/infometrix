@@ -28,7 +28,7 @@ import {
   CheckCircle as ResolveIcon,
   Delete as DeleteIcon
 } from '@mui/icons-material';
-import { helpdeskAPI, userAPI } from '../../../services/api';
+import { helpdeskAPI, userAPI } from '../services/api';
 
 interface TicketBulkActionsProps {
   selectedTicketIds: string[];

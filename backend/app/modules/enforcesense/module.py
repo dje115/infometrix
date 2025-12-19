@@ -30,14 +30,15 @@ class EnforceSenseModule(BaseModule):
         return "0.1.0"  # Placeholder version
     
     def get_routes(self) -> APIRouter:
-        """Return EnforceSense routes"""
-        from . import routes
-        
+        """Return EnforceSense routes (placeholder)"""
         router = APIRouter()
-        router.include_router(
-            routes.router,
-            tags=["enforcesense"]
-        )
+        
+        # TODO: Mount EnforceSense routes when integrated
+        # router.include_router(
+        #     enforcesense_routes.router,
+        #     prefix="/enforcesense",
+        #     tags=["enforcesense"]
+        # )
         
         return router
     
