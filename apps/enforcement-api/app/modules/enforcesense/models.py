@@ -275,10 +275,15 @@ class EnforcementCase(Base):
     is_deleted = Column(Boolean, default=False, nullable=False)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     
-    # Relationships
-    debtor = relationship("Debtor", back_populates="cases")
+    # Relationships (legacy - will be updated in Phase 2)
+    debtor = relationship("Debtor", back_populates="cases")  # DEPRECATED - use party_roles instead
     client = relationship("EnforcementClient", back_populates="cases")
     transactions = relationship("CaseTransaction", back_populates="case", cascade="all, delete-orphan")
+    notes = relationship("CaseNote", back_populates="case", cascade="all, delete-orphan")
+    
+    # New relationships (Phase 1)
+    case_debts = relationship("CaseDebts", back_populates="case", cascade="all, delete-orphan")
+    party_roles = relationship("PartyRole", back_populates="case", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<EnforcementCase {self.case_reference} - {self.status.value}>"
