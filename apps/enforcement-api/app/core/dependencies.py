@@ -26,7 +26,18 @@ from auth.tenant import validate_tenant_access
 
 # Import models (shared database)
 # Note: We import from backend models since we share the database
-backend_path = Path(__file__).parent.parent.parent.parent / "backend"
+# In Docker, the backend is mounted at /app/backend (see docker-compose.yml)
+# For local dev, it's at ../../backend relative to this file
+import os
+
+# Try Docker path first, then local dev path
+if os.path.exists("/app/backend"):
+    backend_path = Path("/app/backend")
+elif os.path.exists(str(Path(__file__).parent.parent.parent.parent / "backend")):
+    backend_path = Path(__file__).parent.parent.parent.parent / "backend"
+else:
+    raise ImportError("Cannot find backend directory. Expected /app/backend (Docker) or ../../backend (local)")
+
 if str(backend_path) not in sys.path:
     sys.path.insert(0, str(backend_path))
 
