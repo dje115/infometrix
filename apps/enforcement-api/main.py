@@ -47,6 +47,9 @@ app.add_middleware(
 # Include EnforceSense routes
 app.include_router(enforcesense_routes.router)
 
+# Include Debtor Portal routes
+app.include_router(portal_routes.router)
+
 
 @app.get("/health")
 async def health_check():

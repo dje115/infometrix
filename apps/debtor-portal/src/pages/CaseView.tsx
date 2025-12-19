@@ -21,6 +21,7 @@ import {
   CardContent
 } from '@mui/material'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import { debtorPortalAPI } from '../services/api'
 
 const CaseView: React.FC = () => {
   const { t, i18n } = useTranslation()
@@ -36,23 +37,25 @@ const CaseView: React.FC = () => {
       setError('')
       
       try {
-        // TODO: Call Enforcement API to get case details
-        // const token = sessionStorage.getItem('debtor_portal_token')
-        // const response = await axios.get(`http://localhost:8001/api/v1/portal/cases/${caseId}`, {
-        //   headers: { 'X-Debtor-Token': token, 'Accept-Language': i18n.language }
-        // })
-        // setCaseData(response.data)
+        // Check if token exists
+        const token = sessionStorage.getItem('debtor_portal_token')
+        if (!token) {
+          navigate('/login')
+          return
+        }
         
-        // Placeholder for now
-        setCaseData({
-          id: caseId,
-          case_reference: 'CASE-001',
-          status: 'active',
-          original_amount: 1000.00,
-          current_balance: 850.00
-        })
-      } catch (err) {
-        setError(t('case.error'))
+        // Call Enforcement API to get case details
+        const caseData = await debtorPortalAPI.getCase(caseId!)
+        setCaseData(caseData)
+      } catch (err: any) {
+        console.error('Failed to load case:', err)
+        if (err.response?.status === 401) {
+          // Token expired or invalid, redirect to login
+          sessionStorage.removeItem('debtor_portal_token')
+          navigate('/login')
+        } else {
+          setError(err.response?.data?.detail || t('case.error'))
+        }
       } finally {
         setLoading(false)
       }
@@ -61,7 +64,7 @@ const CaseView: React.FC = () => {
     if (caseId) {
       loadCase()
     }
-  }, [caseId, t, i18n.language])
+  }, [caseId, t, i18n.language, navigate])
 
   if (loading) {
     return (

@@ -17,6 +17,7 @@ import {
   Box,
   Alert
 } from '@mui/material'
+import { debtorPortalAPI } from '../services/api'
 
 const Login: React.FC = () => {
   const { t } = useTranslation()
@@ -31,19 +32,27 @@ const Login: React.FC = () => {
     setLoading(true)
 
     try {
-      // TODO: Implement actual authentication with Enforcement API
-      // For now, placeholder that accepts any code
-      if (code.trim()) {
-        // Store token in session (placeholder)
-        sessionStorage.setItem('debtor_portal_token', 'placeholder_token')
-        
-        // Navigate to cases (placeholder - will show empty list)
-        navigate('/case/placeholder-case-id')
-      } else {
+      if (!code.trim()) {
         setError(t('login.error'))
+        setLoading(false)
+        return
       }
-    } catch (err) {
-      setError(t('login.error'))
+      
+      // Get current language
+      const locale = localStorage.getItem('debtor_portal_language') || 'en'
+      
+      // Create portal session with Enforcement API
+      const session = await debtorPortalAPI.createSession(code.trim(), locale)
+      
+      // Store token in session
+      sessionStorage.setItem('debtor_portal_token', session.token)
+      sessionStorage.setItem('debtor_portal_language', session.locale)
+      
+      // Navigate to case view
+      navigate(`/case/${session.case_id}`)
+    } catch (err: any) {
+      console.error('Login error:', err)
+      setError(err.response?.data?.detail || t('login.error'))
     } finally {
       setLoading(false)
     }
