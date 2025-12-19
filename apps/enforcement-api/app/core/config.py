@@ -22,8 +22,11 @@ class Settings(BaseSettings):
     # Redis (shared with Platform API for now)
     REDIS_URL: str = "redis://redis:6379/0"
     
-    # Security
+    # Security (must match Platform API for shared JWT tokens)
     SECRET_KEY: str = "ccs_super_secret_key_2025_change_in_production"
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
     # CORS
     CORS_ORIGINS: List[str] = [

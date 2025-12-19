@@ -12,16 +12,27 @@ from contextlib import asynccontextmanager
 import os
 from pathlib import Path
 
-# Import shared package types (will be created)
-# from packages.shared.types.tenant import TenantContext
-# from packages.shared.types.auth import AuthClaims
+from app.modules.enforcesense.routes import router as enforcesense_router
+from app.modules.enforcesense.portal_routes import router as portal_router
+from app.core.database import init_db
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup/shutdown events"""
+    # Startup
+    await init_db()
+    yield
+    # Shutdown (if needed)
+
 
 app = FastAPI(
     title="Infometrix Enforcement API",
     description="API for EnforceSense module and enforcement operations",
     version="3.6.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
 # CORS configuration
@@ -45,10 +56,10 @@ app.add_middleware(
 )
 
 # Include EnforceSense routes
-app.include_router(enforcesense_routes.router)
+app.include_router(enforcesense_router)
 
 # Include Debtor Portal routes
-app.include_router(portal_routes.router)
+app.include_router(portal_router)
 
 
 @app.get("/health")

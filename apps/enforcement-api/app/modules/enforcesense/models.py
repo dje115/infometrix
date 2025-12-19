@@ -30,6 +30,17 @@ class CaseStatus(enum.Enum):
     CANCELLED = "cancelled"
 
 
+class CaseType(enum.Enum):
+    """Case type enumeration"""
+    COUNTY_COURT_JUDGMENT = "county_court_judgment"
+    HIGH_COURT_WRIT = "high_court_writ"
+    MAGISTRATES_COURT = "magistrates_court"
+    COUNCIL_TAX = "council_tax"
+    BUSINESS_RATES = "business_rates"
+    PARKING_FINE = "parking_fine"
+    OTHER = "other"
+
+
 class DebtorParty(Base):
     """
     Minimal DebtorParty model for Enforcement API
@@ -90,11 +101,15 @@ class Case(Base):
     
     # Case details
     case_reference = Column(String(100), nullable=False, unique=True, index=True)
+    case_type = Column(Enum(CaseType), nullable=True)
     status = Column(Enum(CaseStatus), default=CaseStatus.DRAFT, nullable=False)
     
     # Financial
     original_amount = Column(Numeric(10, 2), nullable=False, default=0)
     current_balance = Column(Numeric(10, 2), nullable=False, default=0)
+    fees_charged = Column(Numeric(10, 2), nullable=False, default=0)
+    payments_received = Column(Numeric(10, 2), nullable=False, default=0)
+    opened_date = Column(DateTime(timezone=True), server_default=func.now())
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
