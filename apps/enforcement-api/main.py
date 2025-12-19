@@ -44,6 +44,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include EnforceSense routes
+app.include_router(enforcesense_routes.router)
+
 
 @app.get("/health")
 async def health_check():
