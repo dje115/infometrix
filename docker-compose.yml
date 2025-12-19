@@ -119,7 +119,7 @@ services:
     volumes:
       - ./apps/enforcement-api:/app
       - ./packages/shared:/packages/shared
-      - ./backend:/app/backend
+      - ./backend:/backend
     depends_on:
       postgres:
         condition: service_healthy
