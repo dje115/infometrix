@@ -60,11 +60,16 @@ Tenant (Infometrix subscription owner)
 - `address_history` (JSON array)
 - `language_preference` (ISO 639-1)
 - `communication_preferences` (JSON)
-- `is_vulnerable`, `vulnerability_notes`
-- `risk_flags` (JSON)
 - `external_references` (JSON)
 - `ai_summary`
 - Timestamps and soft delete
+
+**Relationships**:
+- `party_profile` (one-to-one) - Stable facts and preferences
+- `party_flags` (one-to-one) - Boolean/enum signals
+- `party_restrictions` (one-to-one) - Enforced rules
+- `party_support_profile` (one-to-one) - Debt advice/vulnerability status
+- `compliance_notes` (one-to-many) - Restricted detailed notes
 
 **Relationships**:
 - `party_support_profile` (one-to-one)
@@ -351,6 +356,35 @@ Tenant (Infometrix subscription owner)
 1. Mark old `Debtor` model as deprecated
 2. Remove after migration complete
 
+## Minimum "Must-Have" Flags (Phase 1 Implementation)
+
+If implementing flags incrementally, prioritize these 8 essential flags:
+
+1. **Preferred language + interpreter required** (PartyProfile)
+2. **Preferred contact method + "no call"** (PartyProfile + PartyFlags)
+3. **Vulnerability indicator** (category + review date) (PartyFlags)
+4. **Debt advice engaged** (StepChange etc.) + evidence level (PartySupportProfile)
+5. **Breathing Space / insolvency status** (simple enum + dates) (PartySupportProfile)
+6. **Dispute raised** (enum) (PartyFlags)
+7. **Safety risk** (none/caution/high) + no-visit flag (PartyFlags)
+8. **Identity confidence** (low/med/high) + address verified/unverified (PartyProfile)
+
+Everything else can be added in later phases.
+
+## Design Rules for Sensitive Data
+
+**CRITICAL**: Don't store sensitive vulnerability details in free text everywhere.
+
+**Do**:
+- Use structured categories + evidence level + review date
+- Keep detailed notes in restricted "Compliance Notes" area with tighter permissions + audit trail
+- Separate PartyProfile (stable facts), PartyFlags (signals), PartyRestrictions (rules)
+
+**Don't**:
+- Store detailed vulnerability notes in Party model directly
+- Allow all users to see sensitive compliance details
+- Mix operational flags with sensitive personal information
+
 ## Naming Conventions
 
 **Internal (Code/DB)**: Use Naming Set 1 (neutral)
@@ -372,8 +406,12 @@ Tenant (Infometrix subscription owner)
 2. `party_roles`
 3. `debt_accounts`
 4. `case_debts`
-5. `party_support_profiles`
-6. `case_support_impacts`
+5. `party_profiles` (stable facts and preferences)
+6. `party_flags` (boolean/enum signals)
+7. `party_restrictions` (enforced rules)
+8. `party_support_profiles` (debt advice/vulnerability)
+9. `compliance_notes` (restricted detailed notes)
+10. `case_support_impacts`
 
 ### Modified Tables
 1. `enforcement_clients` (add `customer_id` FK)

@@ -45,6 +45,12 @@ This document outlines the step-by-step migration from the current EnforceSense 
 
 ### Phase 1: Add New Models (Non-Breaking) ✅ TODO
 
+**Includes Party Flags Models**:
+- PartyProfile (stable facts)
+- PartyFlags (boolean/enum signals)
+- PartyRestrictions (enforced rules)
+- ComplianceNote (restricted detailed notes)
+
 **Goal**: Create new models alongside existing ones without breaking current functionality
 
 **Tasks**:
