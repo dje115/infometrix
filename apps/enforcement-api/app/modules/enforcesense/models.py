@@ -355,6 +355,7 @@ class EnforcementCase(Base):
     # Support & compliance relationships (Phase 2)
     support_impacts = relationship("CaseSupportImpact", back_populates="case", cascade="all, delete-orphan")
     compliance_notes = relationship("ComplianceNote", back_populates="case", cascade="all, delete-orphan")
+    fee_challenges = relationship("FeeChallenge", back_populates="case", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<EnforcementCase {self.case_reference} - {self.status.value}>"
@@ -534,6 +535,23 @@ class ComplianceNoteCategory(enum.Enum):
     COMPLIANCE_REVIEW = "COMPLIANCE_REVIEW"
     DATA_PROTECTION = "DATA_PROTECTION"
     OTHER = "OTHER"
+
+
+class FeeChallengeReason(enum.Enum):
+    """Fee challenge reason code"""
+    INCORRECT_AMOUNT = "INCORRECT_AMOUNT"
+    WRONG_STAGE = "WRONG_STAGE"
+    NOT_INCURRED = "NOT_INCURRED"
+    VULNERABILITY = "VULNERABILITY"
+    OTHER = "OTHER"
+
+
+class FeeChallengeStatus(enum.Enum):
+    """Fee challenge status"""
+    OPEN = "OPEN"
+    UNDER_REVIEW = "UNDER_REVIEW"
+    UPHELD = "UPHELD"
+    REJECTED = "REJECTED"
 
 
 class PartySupportProfile(Base):
@@ -840,3 +858,65 @@ class ComplianceNote(Base):
     
     def __repr__(self):
         return f"<ComplianceNote {self.id[:8]}... - {self.category.value}>"
+
+
+# ============================================================================
+# Fee Transparency Models
+# ============================================================================
+
+class FeeChallenge(Base):
+    """
+    FeeChallenge model - allows debtors to challenge fees (UK legal requirement)
+    
+    Debtor-initiated challenge workflow with:
+    - Automatic case hold on challenge
+    - Compliance review and resolution
+    - Fee reversal on uphold
+    - Full audit trail
+    
+    See: docs/enforcesense/FEE_TRANSPARENCY.md
+    """
+    __tablename__ = "fee_challenges"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = Column(String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # Foreign keys
+    fee_entry_id = Column(String(36), ForeignKey("ledger_entries.id"), nullable=False, index=True)  # FK to LedgerEntry, type=FEE_EARNED
+    case_id = Column(String(36), ForeignKey("enforcement_cases.id"), nullable=False, index=True)
+    debtor_party_id = Column(String(36), ForeignKey("parties.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # Challenge details
+    reason_code = Column(Enum(FeeChallengeReason), nullable=False)
+    description = Column(Text, nullable=False)  # Debtor's explanation
+    
+    # Status
+    status = Column(Enum(FeeChallengeStatus), default=FeeChallengeStatus.OPEN, nullable=False)
+    
+    # Resolution
+    resolved_by = Column(String(36), nullable=True)  # FK to User
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    resolution_notes = Column(Text, nullable=True)
+    
+    # Documents
+    documents = Column(JSON, default=list)  # JSON array of supporting documents
+    
+    # Timestamps
+    submitted_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    fee_entry = relationship("LedgerEntry", foreign_keys=[fee_entry_id])
+    case = relationship("EnforcementCase", back_populates="fee_challenges")
+    debtor_party = relationship("Party", back_populates="fee_challenges")
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_fee_challenge_case', 'case_id', 'status'),
+        Index('idx_fee_challenge_debtor', 'debtor_party_id'),
+        Index('idx_fee_challenge_fee', 'fee_entry_id'),
+    )
+    
+    def __repr__(self):
+        return f"<FeeChallenge {self.id[:8]}... - {self.status.value}>"
