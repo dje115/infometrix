@@ -36,6 +36,7 @@ import {
   Visibility as ViewIcon,
   Edit as EditIcon
 } from '@mui/icons-material';
+import TablePagination from '@mui/material/TablePagination';
 import { useNavigate } from 'react-router-dom';
 import { enforcesenseAPI } from '../../../services/enforcesenseAPI';
 
@@ -67,6 +68,9 @@ const Cases: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [totalCount, setTotalCount] = useState(0);
   const [debtors, setDebtors] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [newCase, setNewCase] = useState({
@@ -83,13 +87,16 @@ const Cases: React.FC = () => {
     loadCases();
     loadDebtors();
     loadClients();
-  }, [filterStatus]);
+  }, [filterStatus, page, rowsPerPage]);
 
   const loadCases = async () => {
     try {
       setLoading(true);
       setError(null);
-      const params: any = {};
+      const params: any = {
+        skip: page * rowsPerPage,
+        limit: rowsPerPage
+      };
       if (filterStatus !== 'all') {
         params.status = filterStatus;
       }
@@ -98,6 +105,13 @@ const Cases: React.FC = () => {
       }
       const response = await enforcesenseAPI.listCases(params);
       setCases(response.data || []);
+      // Note: API should return total count in headers or response
+      // For now, we'll estimate based on returned data
+      if (response.data && response.data.length === rowsPerPage) {
+        setTotalCount((page + 1) * rowsPerPage + 1); // Estimate
+      } else {
+        setTotalCount(page * rowsPerPage + (response.data?.length || 0));
+      }
     } catch (err: any) {
       console.error('Failed to load cases:', err);
       setError(err.response?.data?.detail || 'Failed to load cases');
@@ -317,6 +331,18 @@ const Cases: React.FC = () => {
               )}
             </TableBody>
           </Table>
+          <TablePagination
+            component="div"
+            count={totalCount}
+            page={page}
+            onPageChange={(_, newPage) => setPage(newPage)}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={(e) => {
+              setRowsPerPage(parseInt(e.target.value, 10));
+              setPage(0);
+            }}
+            rowsPerPageOptions={[10, 25, 50, 100]}
+          />
         </TableContainer>
       )}
 
@@ -415,4 +441,6 @@ const Cases: React.FC = () => {
 };
 
 export default Cases;
+
+
 

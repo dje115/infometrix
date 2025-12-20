@@ -264,3 +264,5 @@ CREATE INDEX IF NOT EXISTS idx_case_notes_case_id ON case_notes(case_id);
 CREATE INDEX IF NOT EXISTS idx_case_notes_tenant_id ON case_notes(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_case_notes_created_by ON case_notes(created_by);
 
+
+

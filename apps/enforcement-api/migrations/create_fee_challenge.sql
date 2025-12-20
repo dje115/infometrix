@@ -55,3 +55,5 @@ CREATE INDEX IF NOT EXISTS idx_fee_challenge_case ON fee_challenges(case_id, sta
 CREATE INDEX IF NOT EXISTS idx_fee_challenge_debtor ON fee_challenges(debtor_party_id);
 CREATE INDEX IF NOT EXISTS idx_fee_challenge_fee ON fee_challenges(fee_entry_id);
 
+
+

@@ -228,3 +228,5 @@ ALTER TABLE fee_rules ADD CONSTRAINT check_debtor_visible_if_recoverable CHECK (
 ALTER TABLE ledger_entries ADD CONSTRAINT fk_ledger_entries_fee_rule 
     FOREIGN KEY (fee_rule_id) REFERENCES fee_rules(id);
 
+
+

@@ -32,3 +32,5 @@ CREATE INDEX IF NOT EXISTS idx_portal_sessions_tenant_id ON portal_sessions(tena
 CREATE INDEX IF NOT EXISTS idx_portal_sessions_expires_at ON portal_sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_portal_sessions_case_reference ON portal_sessions(case_reference);
 
+
+

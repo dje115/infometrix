@@ -56,5 +56,43 @@ export const enforcesenseAPI = {
   getCaseNotes: (caseId: string) => enforcementApiClient.get(`/enforcesense/cases/${caseId}/notes`),
   improveNote: (caseId: string, noteId: string) =>
     enforcementApiClient.post(`/enforcesense/cases/${caseId}/notes/${noteId}/improve`),
+
+  // Case Transactions / Ledger
+  getCaseLedger: (caseId: string, params?: any) =>
+    enforcementApiClient.get(`/enforcesense/cases/${caseId}/ledger`, { params }),
+  getCaseBalance: (caseId: string) =>
+    enforcementApiClient.get(`/enforcesense/cases/${caseId}/balance`),
+  recordPrincipalCharge: (caseId: string, data: any) =>
+    enforcementApiClient.post(`/enforcesense/cases/${caseId}/principal-charge`, data),
+  recordFee: (caseId: string, data: any) =>
+    enforcementApiClient.post(`/enforcesense/cases/${caseId}/fee`, data),
+  recordInterest: (caseId: string, data: any) =>
+    enforcementApiClient.post(`/enforcesense/cases/${caseId}/interest`, data),
+  recordCost: (caseId: string, data: any) =>
+    enforcementApiClient.post(`/enforcesense/cases/${caseId}/cost`, data),
+
+  // Payment Processing
+  recordPayment: (caseId: string, data: any) =>
+    enforcementApiClient.post(`/enforcesense/cases/${caseId}/payments`, data),
+  allocatePayment: (paymentEntryId: string, data: any) =>
+    enforcementApiClient.post(`/enforcesense/payments/${paymentEntryId}/allocate`, data),
+  getPaymentAllocation: (paymentEntryId: string) =>
+    enforcementApiClient.get(`/enforcesense/payments/${paymentEntryId}/allocation`),
+  getCasePayments: (caseId: string, params?: any) =>
+    enforcementApiClient.get(`/enforcesense/cases/${caseId}/payments`, { params }),
+  processRefund: (caseId: string, data: any) =>
+    enforcementApiClient.post(`/enforcesense/cases/${caseId}/refunds`, data),
+
+  // Arrangements
+  createArrangement: (caseId: string, data: any) =>
+    enforcementApiClient.post(`/enforcesense/cases/${caseId}/arrangements`, data),
+  getCaseArrangements: (caseId: string, params?: any) =>
+    enforcementApiClient.get(`/enforcesense/cases/${caseId}/arrangements`, { params }),
+  getArrangement: (arrangementId: string) =>
+    enforcementApiClient.get(`/enforcesense/arrangements/${arrangementId}`),
+  updateArrangementSchedule: (arrangementId: string, data: any) =>
+    enforcementApiClient.put(`/enforcesense/arrangements/${arrangementId}/schedule`, data),
+  updateArrangementStatus: (arrangementId: string, data: any) =>
+    enforcementApiClient.put(`/enforcesense/arrangements/${arrangementId}/status`, data),
 };
 

@@ -102,3 +102,5 @@ CREATE INDEX IF NOT EXISTS idx_quotes_quote_type ON quotes(quote_type);
 CREATE INDEX IF NOT EXISTS idx_quotes_status ON quotes(status);
 CREATE INDEX IF NOT EXISTS idx_quotes_created_at ON quotes(created_at DESC);
 
+
+

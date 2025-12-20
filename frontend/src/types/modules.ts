@@ -73,6 +73,8 @@ export const CORE_NAVIGATION_GROUPS: MenuGroup[] = [
     items: [
       { text: 'EnforceSense Dashboard', icon: 'Gavel', path: '/enforcesense', permission: 'enforcesense:view' },
       { text: 'Cases', icon: 'Folder', path: '/enforcesense/cases', permission: 'enforcesense:view_cases' },
+      { text: 'Debtors', icon: 'People', path: '/enforcesense/debtors', permission: 'enforcesense:view' },
+      { text: 'Clients', icon: 'Business', path: '/enforcesense/clients', permission: 'enforcesense:view' },
       { text: 'Reports', icon: 'Assessment', path: '/enforcesense/reports', permission: 'enforcesense:view' },
     ]
   },

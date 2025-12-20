@@ -105,3 +105,5 @@ CREATE INDEX IF NOT EXISTS idx_enforcement_cases_debtor_party_id ON enforcement_
 CREATE INDEX IF NOT EXISTS idx_enforcement_cases_case_reference ON enforcement_cases(case_reference);
 CREATE INDEX IF NOT EXISTS idx_enforcement_cases_status ON enforcement_cases(status);
 
+
+

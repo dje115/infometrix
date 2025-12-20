@@ -24,3 +24,5 @@ END $$;
 -- Create index for enabled_modules if it doesn't exist (useful for queries)
 CREATE INDEX IF NOT EXISTS idx_tenants_enabled_modules ON tenants USING GIN (enabled_modules);
 
+
+

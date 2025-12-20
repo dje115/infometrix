@@ -18,3 +18,5 @@ EXPOSE 3002
 # Run with hot reload
 CMD ["npm", "run", "dev"]
 
+
+

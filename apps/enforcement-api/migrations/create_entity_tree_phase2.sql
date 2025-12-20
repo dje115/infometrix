@@ -288,3 +288,5 @@ CREATE INDEX IF NOT EXISTS idx_compliance_notes_party_id ON compliance_notes(par
 CREATE INDEX IF NOT EXISTS idx_compliance_notes_case_id ON compliance_notes(case_id) WHERE case_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_compliance_notes_category ON compliance_notes(category);
 
+
+

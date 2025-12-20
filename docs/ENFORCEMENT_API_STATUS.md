@@ -115,3 +115,5 @@
 - OpenAI 1.0.0+ (for AI features)
 - Shared auth library from `packages/shared/auth/`
 
+
+

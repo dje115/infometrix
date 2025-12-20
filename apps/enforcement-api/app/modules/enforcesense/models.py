@@ -120,6 +120,14 @@ class PaymentAllocationMethod(enum.Enum):
     RULE_BASED = "RULE_BASED"
 
 
+class ArrangementStatus(enum.Enum):
+    """Arrangement status"""
+    ACTIVE = "ACTIVE"
+    BROKEN = "BROKEN"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+
+
 class FeeScheduleScope(enum.Enum):
     """Fee schedule scope"""
     TENANT_DEFAULT = "TENANT_DEFAULT"
@@ -351,6 +359,7 @@ class EnforcementCase(Base):
     ledger_entries = relationship("LedgerEntry", back_populates="case", cascade="all, delete-orphan")
     payment_allocations = relationship("PaymentAllocation", back_populates="case", cascade="all, delete-orphan")
     fee_schedules = relationship("FeeSchedule", back_populates="case", cascade="all, delete-orphan")
+    arrangements = relationship("Arrangement", back_populates="case", cascade="all, delete-orphan")
     
     # Support & compliance relationships (Phase 2)
     support_impacts = relationship("CaseSupportImpact", back_populates="case", cascade="all, delete-orphan")
@@ -397,6 +406,152 @@ class CaseTransaction(Base):
     
     def __repr__(self):
         return f"<CaseTransaction {self.transaction_type.value} - £{self.amount}>"
+
+
+class LedgerEntry(Base):
+    """
+    Ledger Entry model - immutable ledger entry for all monetary movement
+    
+    CRITICAL: Ledger is single source of truth for all financial movements.
+    All balances are derived from ledger entries, never stored directly.
+    
+    See: docs/enforcesense/FINANCIAL_MODEL.md
+    """
+    __tablename__ = "ledger_entries"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = Column(String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # Foreign keys (nullable for tenant-level entries)
+    case_id = Column(String(36), ForeignKey("enforcement_cases.id", ondelete="CASCADE"), nullable=True, index=True)
+    debt_id = Column(String(36), nullable=True)  # FK to debt_accounts (when debt_accounts table exists)
+    fee_rule_id = Column(String(36), nullable=True)  # FK to fee_rules (when fee_rules table exists)
+    
+    # Entry type (required)
+    entry_type = Column(Enum(LedgerEntryType), nullable=False)
+    
+    # Amount (always positive, direction determined by entry_type)
+    amount = Column(Numeric(12, 2), nullable=False)
+    currency = Column(String(3), default="GBP", nullable=False)
+    
+    # Description and reference
+    description = Column(Text, nullable=True)
+    reference = Column(String(100), nullable=True)
+    
+    # Status
+    status = Column(Enum(LedgerEntryStatus), default=LedgerEntryStatus.PENDING, nullable=False)
+    posted_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Reversal tracking
+    reversed_at = Column(DateTime(timezone=True), nullable=True)
+    reversed_by = Column(String(36), nullable=True)  # FK to User
+    reversal_reason = Column(Text, nullable=True)
+    
+    # Metadata (JSON)
+    metadata = Column(JSON, default=dict)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_by = Column(String(36), nullable=True)  # FK to User
+    is_deleted = Column(Boolean, default=False, nullable=False)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Relationships
+    case = relationship("EnforcementCase", back_populates="ledger_entries")
+    
+    def __repr__(self):
+        return f"<LedgerEntry {self.entry_type.value} {self.amount} for Case {self.case_id}>"
+
+
+class PaymentAllocation(Base):
+    """
+    Payment Allocation model - tracks how payments are allocated
+    
+    Links a payment (LedgerEntry type=DEBTOR_PAYMENT) to allocation lines
+    that split the payment across principal, interest, fees, etc.
+    
+    See: docs/enforcesense/FINANCIAL_MODEL.md
+    """
+    __tablename__ = "payment_allocations"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = Column(String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # Foreign key to payment ledger entry (unique - one allocation per payment)
+    payment_entry_id = Column(String(36), ForeignKey("ledger_entries.id"), nullable=False, unique=True, index=True)
+    
+    # Case reference
+    case_id = Column(String(36), ForeignKey("enforcement_cases.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # Allocation lines (JSON array)
+    # Format: [{"target_type": "PRINCIPAL", "target_id": "...", "amount": 100.00, "order": 1}, ...]
+    allocation_lines = Column(JSON, nullable=False)
+    
+    # Total allocated (must equal payment amount)
+    total_allocated = Column(Numeric(12, 2), nullable=False)
+    
+    # Allocation method
+    allocation_method = Column(Enum(PaymentAllocationMethod), nullable=False)
+    
+    # Timestamps
+    allocated_at = Column(DateTime(timezone=True), server_default=func.now())
+    allocated_by = Column(String(36), nullable=True)  # FK to User
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    is_deleted = Column(Boolean, default=False, nullable=False)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Relationships
+    payment_entry = relationship("LedgerEntry", foreign_keys=[payment_entry_id])
+    case = relationship("EnforcementCase", back_populates="payment_allocations")
+    
+    def __repr__(self):
+        return f"<PaymentAllocation {self.id[:8]}... for payment {self.payment_entry_id[:8]}...>"
+
+
+class Arrangement(Base):
+    """
+    Arrangement model - payment plans for cases
+    
+    Allows debtors to pay in installments over time.
+    Arrangements reference caseId, not debtorId.
+    """
+    __tablename__ = "arrangements"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = Column(String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # Foreign key to case (required)
+    case_id = Column(String(36), ForeignKey("enforcement_cases.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # Arrangement details
+    total_amount = Column(Numeric(12, 2), nullable=False)
+    schedule = Column(JSON, nullable=False)  # Payment schedule: [{"due_date": "...", "amount": 100.00, "order": 1}, ...]
+    start_date = Column(DateTime(timezone=True), nullable=False)
+    
+    # Status
+    status = Column(Enum(ArrangementStatus), default=ArrangementStatus.ACTIVE, nullable=False)
+    
+    # Dates
+    completed_date = Column(DateTime(timezone=True), nullable=True)
+    cancelled_date = Column(DateTime(timezone=True), nullable=True)
+    
+    # Notes
+    description = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_by = Column(String(36), nullable=True)  # FK to User
+    updated_by = Column(String(36), nullable=True)  # FK to User
+    is_deleted = Column(Boolean, default=False, nullable=False)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Relationships
+    case = relationship("EnforcementCase", back_populates="arrangements")
+    
+    def __repr__(self):
+        return f"<Arrangement {self.id[:8]}... for case {self.case_id[:8]}... - {self.status.value}>"
 
 
 class CaseNote(Base):

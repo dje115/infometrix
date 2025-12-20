@@ -188,3 +188,5 @@ CREATE INDEX IF NOT EXISTS idx_case_debts_case_id ON case_debts(case_id);
 CREATE INDEX IF NOT EXISTS idx_case_debts_debt_account_id ON case_debts(debt_account_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_case_debts_unique ON case_debts(case_id, debt_account_id);
 
+
+

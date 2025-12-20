@@ -27,8 +27,15 @@ from app.core.database import get_async_db
 from app.models.tenant import User, Tenant
 from app.modules.enforcesense.models import (
     Debtor, EnforcementClient, EnforcementCase, CaseTransaction, CaseNote,
-    DebtorEntityType, CaseStatus, CaseType, TransactionType
+    DebtorEntityType, CaseStatus, CaseType, TransactionType,
+    LedgerEntry, LedgerEntryType, LedgerEntryStatus,
+    PaymentAllocation, PaymentAllocationMethod,
+    Arrangement, ArrangementStatus
 )
+from app.services.case_transaction_service import CaseTransactionService
+from app.services.payment_processing_service import PaymentProcessingService
+from app.services.arrangement_service import ArrangementService
+from decimal import Decimal
 
 router = APIRouter(prefix="/enforcesense", tags=["EnforceSense"])
 
@@ -1016,4 +1023,532 @@ async def improve_note(
     
     await db.refresh(note)
     return note
+
+
+# ============================================================================
+# Case Transactions / Ledger Endpoints
+# ============================================================================
+
+class LedgerEntryResponse(BaseModel):
+    id: str
+    case_id: str
+    entry_type: str
+    amount: Decimal
+    currency: str
+    description: Optional[str]
+    reference: Optional[str]
+    status: str
+    posted_at: Optional[datetime]
+    metadata: Dict[str, Any]
+    created_at: datetime
+    created_by: Optional[str]
+    
+    class Config:
+        from_attributes = True
+
+
+class CaseBalanceResponse(BaseModel):
+    total_debt: Decimal
+    total_fees: Decimal
+    total_payments: Decimal
+    total_interest: Decimal
+    total_refunds: Decimal
+    total_adjustments: Decimal
+    current_balance: Decimal
+
+
+class PrincipalChargeCreate(BaseModel):
+    amount: Decimal = Field(..., gt=0)
+    description: Optional[str] = None
+    reference: Optional[str] = None
+
+
+class FeeCreate(BaseModel):
+    amount: Decimal = Field(..., gt=0)
+    fee_type: str
+    description: Optional[str] = None
+    fee_rule_id: Optional[str] = None
+
+
+class InterestCreate(BaseModel):
+    amount: Decimal = Field(..., gt=0)
+    description: Optional[str] = None
+    interest_rate: Optional[Decimal] = None
+    period_days: Optional[int] = None
+
+
+class CostCreate(BaseModel):
+    amount: Decimal = Field(..., gt=0)
+    description: Optional[str] = None
+    cost_type: Optional[str] = None
+
+
+@router.get("/cases/{case_id}/ledger", response_model=List[LedgerEntryResponse])
+async def get_case_ledger(
+    case_id: str,
+    entry_types: Optional[List[LedgerEntryType]] = Query(None),
+    status: Optional[LedgerEntryStatus] = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get ledger entries for a case"""
+    await check_permission(current_user, "enforcesense:view_cases")
+    
+    transaction_service = CaseTransactionService(db, current_user.tenant_id)
+    entries = await transaction_service.get_case_ledger(
+        case_id=case_id,
+        entry_types=entry_types,
+        status=status,
+        limit=limit,
+        offset=offset
+    )
+    
+    return entries
+
+
+@router.get("/cases/{case_id}/balance", response_model=CaseBalanceResponse)
+async def get_case_balance(
+    case_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get case balance (derived from ledger)"""
+    await check_permission(current_user, "enforcesense:view_cases")
+    
+    transaction_service = CaseTransactionService(db, current_user.tenant_id)
+    balance = await transaction_service.get_case_balance(case_id)
+    
+    return balance
+
+
+@router.post("/cases/{case_id}/principal-charge", response_model=LedgerEntryResponse, status_code=status.HTTP_201_CREATED)
+async def record_principal_charge(
+    case_id: str,
+    charge_data: PrincipalChargeCreate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Record a principal charge"""
+    await check_permission(current_user, "enforcesense:update_case")
+    
+    transaction_service = CaseTransactionService(db, current_user.tenant_id)
+    entry = await transaction_service.record_principal_charge(
+        case_id=case_id,
+        amount=charge_data.amount,
+        description=charge_data.description,
+        reference=charge_data.reference,
+        created_by=current_user.id
+    )
+    
+    await db.commit()
+    await db.refresh(entry)
+    
+    return entry
+
+
+@router.post("/cases/{case_id}/fee", response_model=LedgerEntryResponse, status_code=status.HTTP_201_CREATED)
+async def record_fee(
+    case_id: str,
+    fee_data: FeeCreate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Record a fee"""
+    await check_permission(current_user, "enforcesense:update_case")
+    
+    transaction_service = CaseTransactionService(db, current_user.tenant_id)
+    entry = await transaction_service.record_fee(
+        case_id=case_id,
+        amount=fee_data.amount,
+        fee_type=fee_data.fee_type,
+        description=fee_data.description,
+        fee_rule_id=fee_data.fee_rule_id,
+        created_by=current_user.id
+    )
+    
+    await db.commit()
+    await db.refresh(entry)
+    
+    return entry
+
+
+@router.post("/cases/{case_id}/interest", response_model=LedgerEntryResponse, status_code=status.HTTP_201_CREATED)
+async def record_interest(
+    case_id: str,
+    interest_data: InterestCreate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Record interest accrued"""
+    await check_permission(current_user, "enforcesense:update_case")
+    
+    transaction_service = CaseTransactionService(db, current_user.tenant_id)
+    entry = await transaction_service.record_interest(
+        case_id=case_id,
+        amount=interest_data.amount,
+        description=interest_data.description,
+        interest_rate=interest_data.interest_rate,
+        period_days=interest_data.period_days,
+        created_by=current_user.id
+    )
+    
+    await db.commit()
+    await db.refresh(entry)
+    
+    return entry
+
+
+@router.post("/cases/{case_id}/cost", response_model=LedgerEntryResponse, status_code=status.HTTP_201_CREATED)
+async def record_cost(
+    case_id: str,
+    cost_data: CostCreate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Record a disbursement/cost"""
+    await check_permission(current_user, "enforcesense:update_case")
+    
+    transaction_service = CaseTransactionService(db, current_user.tenant_id)
+    entry = await transaction_service.record_cost(
+        case_id=case_id,
+        amount=cost_data.amount,
+        description=cost_data.description,
+        cost_type=cost_data.cost_type,
+        created_by=current_user.id
+    )
+    
+    await db.commit()
+    await db.refresh(entry)
+    
+    return entry
+
+
+# ============================================================================
+# Payment Processing Endpoints
+# ============================================================================
+
+class PaymentCreate(BaseModel):
+    amount: Decimal = Field(..., gt=0)
+    payment_method: str
+    payment_reference: Optional[str] = None
+    description: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class PaymentAllocationLine(BaseModel):
+    target_type: str  # "PRINCIPAL" | "INTEREST" | "ENFORCEMENT_FEE" | "CLIENT_FEE"
+    target_id: Optional[str] = None
+    amount: Decimal
+    order: int
+
+
+class PaymentAllocationCreate(BaseModel):
+    allocation_lines: List[PaymentAllocationLine]
+    allocation_method: PaymentAllocationMethod = PaymentAllocationMethod.MANUAL
+
+
+class PaymentAllocationResponse(BaseModel):
+    id: str
+    payment_entry_id: str
+    case_id: str
+    allocation_lines: List[Dict[str, Any]]
+    total_allocated: Decimal
+    allocation_method: str
+    allocated_at: datetime
+    allocated_by: Optional[str]
+    
+    class Config:
+        from_attributes = True
+
+
+class RefundCreate(BaseModel):
+    amount: Decimal = Field(..., gt=0)
+    original_payment_id: Optional[str] = None
+    reason: Optional[str] = None
+
+
+@router.post("/cases/{case_id}/payments", response_model=LedgerEntryResponse, status_code=status.HTTP_201_CREATED)
+async def record_payment(
+    case_id: str,
+    payment_data: PaymentCreate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Record a payment from debtor"""
+    await check_permission(current_user, "enforcesense:update_case")
+    
+    payment_service = PaymentProcessingService(db, current_user.tenant_id)
+    entry = await payment_service.record_payment(
+        case_id=case_id,
+        amount=payment_data.amount,
+        payment_method=payment_data.payment_method,
+        payment_reference=payment_data.payment_reference,
+        description=payment_data.description,
+        metadata=payment_data.metadata,
+        created_by=current_user.id
+    )
+    
+    await db.commit()
+    await db.refresh(entry)
+    
+    return entry
+
+
+@router.post("/payments/{payment_entry_id}/allocate", response_model=PaymentAllocationResponse, status_code=status.HTTP_201_CREATED)
+async def allocate_payment(
+    payment_entry_id: str,
+    allocation_data: PaymentAllocationCreate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Allocate a payment across debts and fees"""
+    await check_permission(current_user, "enforcesense:update_case")
+    
+    payment_service = PaymentProcessingService(db, current_user.tenant_id)
+    
+    # Convert Pydantic models to dicts
+    allocation_lines = [line.dict() for line in allocation_data.allocation_lines]
+    
+    allocation = await payment_service.allocate_payment(
+        payment_entry_id=payment_entry_id,
+        allocation_lines=allocation_lines,
+        allocation_method=allocation_data.allocation_method,
+        allocated_by=current_user.id
+    )
+    
+    await db.commit()
+    await db.refresh(allocation)
+    
+    return allocation
+
+
+@router.get("/payments/{payment_entry_id}/allocation", response_model=Optional[PaymentAllocationResponse])
+async def get_payment_allocation(
+    payment_entry_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get allocation for a payment"""
+    await check_permission(current_user, "enforcesense:view_cases")
+    
+    payment_service = PaymentProcessingService(db, current_user.tenant_id)
+    allocation = await payment_service.get_payment_allocation(payment_entry_id)
+    
+    return allocation
+
+
+@router.get("/cases/{case_id}/payments", response_model=List[LedgerEntryResponse])
+async def get_case_payments(
+    case_id: str,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all payments for a case"""
+    await check_permission(current_user, "enforcesense:view_cases")
+    
+    payment_service = PaymentProcessingService(db, current_user.tenant_id)
+    payments = await payment_service.get_case_payments(
+        case_id=case_id,
+        limit=limit,
+        offset=offset
+    )
+    
+    return payments
+
+
+@router.post("/cases/{case_id}/refunds", response_model=LedgerEntryResponse, status_code=status.HTTP_201_CREATED)
+async def process_refund(
+    case_id: str,
+    refund_data: RefundCreate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Process a refund to debtor"""
+    await check_permission(current_user, "enforcesense:admin")
+    
+    payment_service = PaymentProcessingService(db, current_user.tenant_id)
+    entry = await payment_service.process_refund(
+        case_id=case_id,
+        amount=refund_data.amount,
+        original_payment_id=refund_data.original_payment_id,
+        reason=refund_data.reason,
+        created_by=current_user.id
+    )
+    
+    await db.commit()
+    await db.refresh(entry)
+    
+    return entry
+
+
+# ============================================================================
+# Arrangement Endpoints
+# ============================================================================
+
+class PaymentScheduleItem(BaseModel):
+    due_date: str  # ISO date string
+    amount: Decimal
+    order: int
+
+
+class ArrangementCreate(BaseModel):
+    total_amount: Decimal = Field(..., gt=0)
+    schedule: List[PaymentScheduleItem]
+    start_date: str  # ISO date string
+    description: Optional[str] = None
+
+
+class ArrangementResponse(BaseModel):
+    id: str
+    case_id: str
+    total_amount: Decimal
+    schedule: List[Dict[str, Any]]
+    start_date: datetime
+    status: str
+    completed_date: Optional[datetime]
+    cancelled_date: Optional[datetime]
+    description: Optional[str]
+    notes: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+    created_by: Optional[str]
+    
+    class Config:
+        from_attributes = True
+
+
+class ArrangementScheduleUpdate(BaseModel):
+    schedule: List[PaymentScheduleItem]
+
+
+class ArrangementStatusUpdate(BaseModel):
+    status: ArrangementStatus
+    reason: Optional[str] = None
+
+
+@router.post("/cases/{case_id}/arrangements", response_model=ArrangementResponse, status_code=status.HTTP_201_CREATED)
+async def create_arrangement(
+    case_id: str,
+    arrangement_data: ArrangementCreate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Create a payment arrangement (payment plan)"""
+    await check_permission(current_user, "enforcesense:update_case")
+    
+    arrangement_service = ArrangementService(db, current_user.tenant_id)
+    
+    # Convert schedule items to dicts
+    schedule = [item.dict() for item in arrangement_data.schedule]
+    start_date = datetime.fromisoformat(arrangement_data.start_date).date()
+    
+    arrangement = await arrangement_service.create_arrangement(
+        case_id=case_id,
+        total_amount=arrangement_data.total_amount,
+        schedule=schedule,
+        start_date=start_date,
+        description=arrangement_data.description,
+        created_by=current_user.id
+    )
+    
+    await db.commit()
+    await db.refresh(arrangement)
+    
+    return arrangement
+
+
+@router.get("/cases/{case_id}/arrangements", response_model=List[ArrangementResponse])
+async def get_case_arrangements(
+    case_id: str,
+    status: Optional[ArrangementStatus] = Query(None),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get arrangements for a case"""
+    await check_permission(current_user, "enforcesense:view_cases")
+    
+    arrangement_service = ArrangementService(db, current_user.tenant_id)
+    arrangements = await arrangement_service.get_case_arrangements(
+        case_id=case_id,
+        status=status
+    )
+    
+    return arrangements
+
+
+@router.get("/arrangements/{arrangement_id}", response_model=ArrangementResponse)
+async def get_arrangement(
+    arrangement_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get a single arrangement"""
+    await check_permission(current_user, "enforcesense:view_cases")
+    
+    arrangement_service = ArrangementService(db, current_user.tenant_id)
+    arrangement = await arrangement_service.get_arrangement(arrangement_id)
+    
+    if not arrangement:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Arrangement not found"
+        )
+    
+    return arrangement
+
+
+@router.put("/arrangements/{arrangement_id}/schedule", response_model=ArrangementResponse)
+async def update_arrangement_schedule(
+    arrangement_id: str,
+    schedule_data: ArrangementScheduleUpdate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update arrangement schedule"""
+    await check_permission(current_user, "enforcesense:update_case")
+    
+    arrangement_service = ArrangementService(db, current_user.tenant_id)
+    
+    # Convert schedule items to dicts
+    schedule = [item.dict() for item in schedule_data.schedule]
+    
+    arrangement = await arrangement_service.update_arrangement_schedule(
+        arrangement_id=arrangement_id,
+        schedule=schedule,
+        updated_by=current_user.id
+    )
+    
+    await db.commit()
+    await db.refresh(arrangement)
+    
+    return arrangement
+
+
+@router.put("/arrangements/{arrangement_id}/status", response_model=ArrangementResponse)
+async def update_arrangement_status(
+    arrangement_id: str,
+    status_data: ArrangementStatusUpdate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update arrangement status"""
+    await check_permission(current_user, "enforcesense:update_case")
+    
+    arrangement_service = ArrangementService(db, current_user.tenant_id)
+    
+    arrangement = await arrangement_service.update_arrangement_status(
+        arrangement_id=arrangement_id,
+        status=status_data.status,
+        reason=status_data.reason,
+        updated_by=current_user.id
+    )
+    
+    await db.commit()
+    await db.refresh(arrangement)
+    
+    return arrangement
 

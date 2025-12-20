@@ -64,6 +64,13 @@ const Compliance = lazy(() => import('./pages/Compliance'));
 const EnforceSenseDashboard = lazy(() => import('./modules/enforcesense/pages/EnforceSenseDashboard'));
 const EnforceSenseCases = lazy(() => import('./modules/enforcesense/pages/Cases'));
 const EnforceSenseCaseDetail = lazy(() => import('./modules/enforcesense/pages/CaseDetail'));
+const RecordPayment = lazy(() => import('./modules/enforcesense/pages/RecordPayment'));
+const PaymentAllocation = lazy(() => import('./modules/enforcesense/pages/PaymentAllocation'));
+const CreateArrangement = lazy(() => import('./modules/enforcesense/pages/CreateArrangement'));
+const Debtors = lazy(() => import('./modules/enforcesense/pages/Debtors'));
+const DebtorDetail = lazy(() => import('./modules/enforcesense/pages/DebtorDetail'));
+const Clients = lazy(() => import('./modules/enforcesense/pages/Clients'));
+const ClientDetail = lazy(() => import('./modules/enforcesense/pages/ClientDetail'));
 const DebtorPortalLogin = lazy(() => import('./pages/DebtorPortalLogin'));
 const DebtorPortalCases = lazy(() => import('./pages/DebtorPortalCases'));
 
@@ -528,6 +535,62 @@ function App() {
             element={
               <ProtectedRoute>
                 <EnforceSenseCaseDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/enforcesense/cases/:caseId/payments/new"
+            element={
+              <ProtectedRoute>
+                <RecordPayment />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/enforcesense/payments/:paymentEntryId/allocate"
+            element={
+              <ProtectedRoute>
+                <PaymentAllocation />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/enforcesense/cases/:caseId/arrangements/new"
+            element={
+              <ProtectedRoute>
+                <CreateArrangement />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/enforcesense/debtors"
+            element={
+              <ProtectedRoute>
+                <Debtors />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/enforcesense/debtors/:id"
+            element={
+              <ProtectedRoute>
+                <DebtorDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/enforcesense/clients"
+            element={
+              <ProtectedRoute>
+                <Clients />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/enforcesense/clients/:id"
+            element={
+              <ProtectedRoute>
+                <ClientDetail />
               </ProtectedRoute>
             }
           />
