@@ -56,7 +56,8 @@ async def init_db():
         ("add_portal_sessions_table.sql", "portal_sessions"),
         ("create_entity_tree_phase1.sql", "parties"),  # Check for parties table (created first in entity tree)
         ("create_financial_models_phase1.sql", "ledger_entries"),  # Check for ledger_entries table (financial foundation)
-        ("create_entity_tree_phase2.sql", "party_support_profiles")  # Check for party_support_profiles table (support & flags)
+        ("create_entity_tree_phase2.sql", "party_support_profiles"),  # Check for party_support_profiles table (support & flags)
+        ("create_fee_challenge.sql", "fee_challenges")  # Check for fee_challenges table (fee transparency)
     ]
     
     for migration_file, check_table in migrations:
