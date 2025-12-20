@@ -55,7 +55,8 @@ async def init_db():
         ("create_enforcement_tables_full.sql", "enforcement_clients"),  # Check for enforcement_clients as it's created last
         ("add_portal_sessions_table.sql", "portal_sessions"),
         ("create_entity_tree_phase1.sql", "parties"),  # Check for parties table (created first in entity tree)
-        ("create_financial_models_phase1.sql", "ledger_entries")  # Check for ledger_entries table (financial foundation)
+        ("create_financial_models_phase1.sql", "ledger_entries"),  # Check for ledger_entries table (financial foundation)
+        ("create_entity_tree_phase2.sql", "party_support_profiles")  # Check for party_support_profiles table (support & flags)
     ]
     
     for migration_file, check_table in migrations:
