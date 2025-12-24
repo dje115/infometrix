@@ -139,7 +139,26 @@ const Cases: React.FC = () => {
   };
 
   const handleCreateCase = async () => {
+    // Validation
+    if (!newCase.debtor_id) {
+      setError('Please select a debtor');
+      return;
+    }
+    if (!newCase.client_id) {
+      setError('Please select a client');
+      return;
+    }
+    if (!newCase.case_type) {
+      setError('Please select a case type');
+      return;
+    }
+    if (newCase.original_amount <= 0) {
+      setError('Original amount must be greater than 0');
+      return;
+    }
+
     try {
+      setError(null);
       await enforcesenseAPI.createCase(newCase);
       setCreateDialogOpen(false);
       setNewCase({
@@ -152,9 +171,11 @@ const Cases: React.FC = () => {
         client_reference: ''
       });
       loadCases();
+      // Show success message (you could use a snackbar here)
     } catch (err: any) {
       console.error('Failed to create case:', err);
-      setError(err.response?.data?.detail || 'Failed to create case');
+      const errorMessage = err.response?.data?.detail || err.message || 'Failed to create case';
+      setError(errorMessage);
     }
   };
 
@@ -408,10 +429,14 @@ const Cases: React.FC = () => {
 
             <TextField
               fullWidth
-              label="Original Amount"
+              label="Original Amount *"
               type="number"
               value={newCase.original_amount}
               onChange={(e) => setNewCase({ ...newCase, original_amount: parseFloat(e.target.value) || 0 })}
+              inputProps={{ min: 0.01, step: 0.01 }}
+              required
+              error={newCase.original_amount <= 0}
+              helperText={newCase.original_amount <= 0 ? 'Amount must be greater than 0' : 'Enter the original debt amount'}
               sx={{ mb: 2 }}
             />
 
@@ -430,7 +455,7 @@ const Cases: React.FC = () => {
           <Button
             variant="contained"
             onClick={handleCreateCase}
-            disabled={!newCase.debtor_id || !newCase.client_id}
+            disabled={!newCase.debtor_id || !newCase.client_id || newCase.original_amount <= 0}
           >
             Create
           </Button>

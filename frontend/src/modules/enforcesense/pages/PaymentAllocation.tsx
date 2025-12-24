@@ -142,9 +142,23 @@ const PaymentAllocation: React.FC = () => {
   };
 
   const handleSave = async () => {
+    // Validation
     if (allocationLines.length === 0) {
       setError('Please add at least one allocation line');
       return;
+    }
+
+    // Validate all allocation lines have valid amounts
+    for (const line of allocationLines) {
+      const amount = parseFloat(line.amount || '0');
+      if (isNaN(amount) || amount <= 0) {
+        setError(`All allocation lines must have a valid amount greater than 0`);
+        return;
+      }
+      if (amount > 1000000) {
+        setError(`Allocation amount cannot exceed £1,000,000`);
+        return;
+      }
     }
 
     const totalAllocated = allocationLines.reduce(
@@ -152,8 +166,9 @@ const PaymentAllocation: React.FC = () => {
       0
     );
 
-    if (Math.abs(totalAllocated - (paymentEntry?.amount || 0)) > 0.01) {
-      setError(`Total allocated (${totalAllocated.toFixed(2)}) must equal payment amount (${paymentEntry?.amount || 0})`);
+    const paymentAmount = paymentEntry?.amount || 0;
+    if (Math.abs(totalAllocated - paymentAmount) > 0.01) {
+      setError(`Total allocated (${formatCurrency(totalAllocated)}) must equal payment amount (${formatCurrency(paymentAmount)})`);
       return;
     }
 
@@ -176,7 +191,8 @@ const PaymentAllocation: React.FC = () => {
       navigate(`/enforcesense/cases/${paymentEntry?.case_id}`);
     } catch (err: any) {
       console.error('Failed to allocate payment:', err);
-      setError(err.response?.data?.detail || 'Failed to allocate payment');
+      const errorMessage = err.response?.data?.detail || err.message || 'Failed to allocate payment';
+      setError(errorMessage);
     } finally {
       setSaving(false);
     }

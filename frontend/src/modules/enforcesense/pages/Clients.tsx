@@ -94,12 +94,20 @@ const Clients: React.FC = () => {
   };
 
   const handleCreateClient = async () => {
+    // Validation
     if (!newClient.name.trim()) {
       setError('Name is required');
       return;
     }
 
+    // Validate email format if provided
+    if (newClient.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newClient.email)) {
+      setError('Please enter a valid email address');
+      return;
+    }
+
     try {
+      setError(null);
       await enforcesenseAPI.createClient(newClient);
       setCreateDialogOpen(false);
       setNewClient({
@@ -113,7 +121,8 @@ const Clients: React.FC = () => {
       loadClients();
     } catch (err: any) {
       console.error('Failed to create client:', err);
-      setError(err.response?.data?.detail || 'Failed to create client');
+      const errorMessage = err.response?.data?.detail || err.message || 'Failed to create client';
+      setError(errorMessage);
     }
   };
 
@@ -276,6 +285,8 @@ const Clients: React.FC = () => {
               type="email"
               value={newClient.email}
               onChange={(e) => setNewClient({ ...newClient, email: e.target.value })}
+              error={newClient.email !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newClient.email)}
+              helperText={newClient.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newClient.email) ? 'Invalid email format' : ''}
               sx={{ mb: 2 }}
             />
             <TextField

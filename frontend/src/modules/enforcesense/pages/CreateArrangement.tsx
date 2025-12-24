@@ -122,8 +122,15 @@ const CreateArrangement: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!arrangementData.total_amount || parseFloat(arrangementData.total_amount) <= 0) {
-      setError('Please enter a valid total amount');
+    // Validation
+    const totalAmount = parseFloat(arrangementData.total_amount);
+    if (!arrangementData.total_amount || isNaN(totalAmount) || totalAmount <= 0) {
+      setError('Please enter a valid total amount greater than 0');
+      return;
+    }
+
+    if (totalAmount > 1000000) {
+      setError('Total amount cannot exceed £1,000,000');
       return;
     }
 
@@ -132,13 +139,32 @@ const CreateArrangement: React.FC = () => {
       return;
     }
 
+    // Validate all schedule items have valid dates and amounts
+    const now = new Date();
+    for (const item of scheduleItems) {
+      if (!item.due_date) {
+        setError('All schedule items must have a due date');
+        return;
+      }
+      const dueDate = new Date(item.due_date);
+      if (dueDate < now) {
+        setError('All due dates must be in the future');
+        return;
+      }
+      const amount = parseFloat(item.amount || '0');
+      if (isNaN(amount) || amount <= 0) {
+        setError('All schedule items must have a valid amount greater than 0');
+        return;
+      }
+    }
+
     const totalScheduleAmount = scheduleItems.reduce(
       (sum, item) => sum + parseFloat(item.amount || '0'),
       0
     );
 
-    if (Math.abs(totalScheduleAmount - parseFloat(arrangementData.total_amount)) > 0.01) {
-      setError(`Schedule total (${totalScheduleAmount.toFixed(2)}) must equal arrangement total (${arrangementData.total_amount})`);
+    if (Math.abs(totalScheduleAmount - totalAmount) > 0.01) {
+      setError(`Schedule total (${formatCurrency(totalScheduleAmount)}) must equal arrangement total (${formatCurrency(totalAmount)})`);
       return;
     }
 
@@ -147,7 +173,7 @@ const CreateArrangement: React.FC = () => {
       setError(null);
       
       await enforcesenseAPI.createArrangement(caseId!, {
-        total_amount: parseFloat(arrangementData.total_amount),
+        total_amount: totalAmount,
         schedule: scheduleItems.map(item => ({
           due_date: item.due_date,
           amount: parseFloat(item.amount),
@@ -160,7 +186,8 @@ const CreateArrangement: React.FC = () => {
       navigate(`/enforcesense/cases/${caseId}`);
     } catch (err: any) {
       console.error('Failed to create arrangement:', err);
-      setError(err.response?.data?.detail || 'Failed to create arrangement');
+      const errorMessage = err.response?.data?.detail || err.message || 'Failed to create arrangement';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

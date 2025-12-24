@@ -254,13 +254,20 @@ const CaseDetail: React.FC = () => {
   };
 
   const handleStatusUpdate = async () => {
+    if (!newStatus || newStatus === caseData?.status) {
+      setStatusDialogOpen(false);
+      return;
+    }
+
     try {
+      setError(null);
       await enforcesenseAPI.updateCase(id!, { status: newStatus });
       setStatusDialogOpen(false);
       loadCase();
     } catch (err: any) {
       console.error('Failed to update status:', err);
-      setError(err.response?.data?.detail || 'Failed to update status');
+      const errorMessage = err.response?.data?.detail || err.message || 'Failed to update status';
+      setError(errorMessage);
     }
   };
 
@@ -891,6 +898,11 @@ const CaseDetail: React.FC = () => {
       <Dialog open={statusDialogOpen} onClose={() => setStatusDialogOpen(false)}>
         <DialogTitle>Update Case Status</DialogTitle>
         <DialogContent>
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          )}
           <FormControl fullWidth sx={{ mt: 2 }}>
             <InputLabel>Status</InputLabel>
             <Select value={newStatus} label="Status" onChange={(e) => setNewStatus(e.target.value)}>
@@ -902,10 +914,19 @@ const CaseDetail: React.FC = () => {
               <MenuItem value="cancelled">Cancelled</MenuItem>
             </Select>
           </FormControl>
+          {newStatus && newStatus !== caseData?.status && (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              Changing status from <strong>{caseData?.status?.charAt(0).toUpperCase() + caseData?.status?.slice(1).replace('_', ' ')}</strong> to <strong>{newStatus.charAt(0).toUpperCase() + newStatus.slice(1).replace('_', ' ')}</strong>
+            </Alert>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setStatusDialogOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleStatusUpdate}>
+          <Button 
+            variant="contained" 
+            onClick={handleStatusUpdate}
+            disabled={!newStatus || newStatus === caseData?.status}
+          >
             Update Status
           </Button>
         </DialogActions>

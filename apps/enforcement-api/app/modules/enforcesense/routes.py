@@ -156,16 +156,18 @@ class ClientResponse(BaseModel):
 
 
 class CaseCreate(BaseModel):
-    debtor_id: str
-    client_id: str
-    case_reference: Optional[str] = None  # Auto-generated if not provided
-    client_reference: Optional[str] = None
-    case_type: CaseType
-    status: CaseStatus = CaseStatus.DRAFT
-    legal_basis: Optional[str] = None
-    court_reference: Optional[str] = None
-    judgment_date: Optional[datetime] = None
-    original_amount: float = Field(0, ge=0)
+    debtor_id: str = Field(..., description="Debtor ID (required)")
+    client_id: str = Field(..., description="Client ID (required)")
+    case_reference: Optional[str] = Field(None, max_length=100, description="Case reference (auto-generated if not provided)")
+    client_reference: Optional[str] = Field(None, max_length=100, description="Client's own reference number")
+    case_type: CaseType = Field(..., description="Type of case")
+    status: CaseStatus = Field(CaseStatus.DRAFT, description="Case status")
+    legal_basis: Optional[str] = Field(None, max_length=2000, description="Legal basis for enforcement")
+    court_reference: Optional[str] = Field(None, max_length=100, description="Court reference number")
+    judgment_date: Optional[datetime] = Field(None, description="Date of judgment")
+    original_amount: Decimal = Field(..., gt=0, le=Decimal('10000000'), description="Original debt amount (required, must be > 0)")
+    notes: Optional[str] = Field(None, max_length=5000, description="Initial case notes")
+    assigned_agent: Optional[str] = Field(None, description="User ID of assigned agent")
     notes: Optional[str] = None
     assigned_agent: Optional[str] = None
 
@@ -714,8 +716,8 @@ async def create_case(
         legal_basis=case_data.legal_basis,
         court_reference=case_data.court_reference,
         judgment_date=case_data.judgment_date,
-        original_amount=case_data.original_amount,
-        current_balance=case_data.original_amount,  # Initial balance equals original amount
+        original_amount=Decimal(str(case_data.original_amount)),
+        current_balance=Decimal(str(case_data.original_amount)),  # Initial balance equals original amount
         notes=case_data.notes,
         assigned_agent=case_data.assigned_agent,
         opened_date=datetime.now(timezone.utc)
@@ -1230,10 +1232,10 @@ async def record_cost(
 # ============================================================================
 
 class PaymentCreate(BaseModel):
-    amount: Decimal = Field(..., gt=0)
-    payment_method: str
-    payment_reference: Optional[str] = None
-    description: Optional[str] = None
+    amount: Decimal = Field(..., gt=0, le=Decimal('1000000'), description="Payment amount must be between 0.01 and 1,000,000")
+    payment_method: str = Field(..., min_length=1, description="Payment method (e.g., bank_transfer, card, cash, cheque)")
+    payment_reference: Optional[str] = Field(None, max_length=100, description="External payment reference")
+    description: Optional[str] = Field(None, max_length=500, description="Payment description")
     metadata: Optional[Dict[str, Any]] = None
 
 

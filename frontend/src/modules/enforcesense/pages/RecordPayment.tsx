@@ -70,8 +70,20 @@ const RecordPayment: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!paymentData.amount || parseFloat(paymentData.amount) <= 0) {
-      setError('Please enter a valid payment amount');
+    // Validation
+    const amount = parseFloat(paymentData.amount);
+    if (!paymentData.amount || isNaN(amount) || amount <= 0) {
+      setError('Please enter a valid payment amount greater than 0');
+      return;
+    }
+
+    if (amount > 1000000) {
+      setError('Payment amount cannot exceed £1,000,000');
+      return;
+    }
+
+    if (!paymentData.payment_method) {
+      setError('Please select a payment method');
       return;
     }
 
@@ -80,7 +92,7 @@ const RecordPayment: React.FC = () => {
       setError(null);
       
       await enforcesenseAPI.recordPayment(caseId!, {
-        amount: parseFloat(paymentData.amount),
+        amount: amount,
         payment_method: paymentData.payment_method,
         payment_reference: paymentData.payment_reference || undefined,
         description: paymentData.description || undefined
@@ -89,7 +101,8 @@ const RecordPayment: React.FC = () => {
       navigate(`/enforcesense/cases/${caseId}`);
     } catch (err: any) {
       console.error('Failed to record payment:', err);
-      setError(err.response?.data?.detail || 'Failed to record payment');
+      const errorMessage = err.response?.data?.detail || err.message || 'Failed to record payment';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

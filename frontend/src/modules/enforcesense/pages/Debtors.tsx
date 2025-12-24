@@ -114,12 +114,20 @@ const Debtors: React.FC = () => {
   };
 
   const handleCreateDebtor = async () => {
+    // Validation
     if (!newDebtor.legal_name.trim()) {
       setError('Legal name is required');
       return;
     }
 
+    // Validate email format if provided
+    if (newDebtor.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newDebtor.email)) {
+      setError('Please enter a valid email address');
+      return;
+    }
+
     try {
+      setError(null);
       await enforcesenseAPI.createDebtor(newDebtor);
       setCreateDialogOpen(false);
       setNewDebtor({
@@ -137,7 +145,8 @@ const Debtors: React.FC = () => {
       loadDebtors();
     } catch (err: any) {
       console.error('Failed to create debtor:', err);
-      setError(err.response?.data?.detail || 'Failed to create debtor');
+      const errorMessage = err.response?.data?.detail || err.message || 'Failed to create debtor';
+      setError(errorMessage);
     }
   };
 
@@ -390,6 +399,8 @@ const Debtors: React.FC = () => {
               type="email"
               value={newDebtor.email}
               onChange={(e) => setNewDebtor({ ...newDebtor, email: e.target.value })}
+              error={newDebtor.email !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newDebtor.email)}
+              helperText={newDebtor.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newDebtor.email) ? 'Invalid email format' : ''}
               sx={{ mb: 2 }}
             />
 
