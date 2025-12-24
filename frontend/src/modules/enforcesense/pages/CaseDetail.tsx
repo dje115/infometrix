@@ -156,6 +156,8 @@ const CaseDetail: React.FC = () => {
   const [newStatus, setNewStatus] = useState('');
   const [arrangements, setArrangements] = useState<any[]>([]);
   const [loadingArrangements, setLoadingArrangements] = useState(false);
+  const [statusHistory, setStatusHistory] = useState<any[]>([]);
+  const [loadingStatusHistory, setLoadingStatusHistory] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -167,8 +169,24 @@ const CaseDetail: React.FC = () => {
       if (tabValue === 4) {
         loadArrangements();
       }
+      if (tabValue === 5) {
+        loadStatusHistory();
+      }
     }
   }, [id, tabValue]);
+
+  const loadStatusHistory = async () => {
+    if (!id) return;
+    try {
+      setLoadingStatusHistory(true);
+      const response = await enforcesenseAPI.getCaseStatusHistory(id);
+      setStatusHistory(response.data || []);
+    } catch (err: any) {
+      console.error('Failed to load status history:', err);
+    } finally {
+      setLoadingStatusHistory(false);
+    }
+  };
 
   const loadArrangements = async () => {
     try {

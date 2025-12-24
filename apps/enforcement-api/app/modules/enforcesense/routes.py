@@ -195,6 +195,8 @@ class CaseUpdate(BaseModel):
     assigned_agent: Optional[str] = None
     notes: Optional[str] = None
     risk_flags: Optional[List[str]] = None
+    status_change_reason: Optional[str] = Field(None, description="Reason for status change (optional)")
+    status_change_notes: Optional[str] = Field(None, description="Additional notes about status change (optional)")
 
 
 class CaseResponse(BaseModel):
