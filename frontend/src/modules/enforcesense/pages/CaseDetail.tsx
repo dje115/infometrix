@@ -466,6 +466,7 @@ const CaseDetail: React.FC = () => {
             }
           />
           <Tab icon={<ScheduleIcon />} iconPosition="start" label="Arrangements" />
+          <Tab icon={<InfoIcon />} iconPosition="start" label="Status History" />
         </Tabs>
       </Paper>
 

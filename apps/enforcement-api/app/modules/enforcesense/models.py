@@ -1119,3 +1119,43 @@ class DebtorAuditLog(Base):
     
     def __repr__(self):
         return f"<DebtorAuditLog debtor_id={self.debtor_id} user_id={self.user_id} accessed_at={self.accessed_at}>"
+
+
+class CaseStatusHistory(Base):
+    """
+    Case status change history
+    
+    Tracks all status changes for a case, including who made the change and when.
+    This provides an audit trail for case status transitions.
+    """
+    __tablename__ = "case_status_history"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = Column(String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    case_id = Column(String(36), ForeignKey("enforcement_cases.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # Status change details
+    old_status = Column(Enum(CaseStatus), nullable=True)  # Previous status
+    new_status = Column(Enum(CaseStatus), nullable=False)  # New status
+    
+    # User who made the change
+    changed_by = Column(String(36), nullable=False, index=True)  # Platform API user ID
+    changed_by_email = Column(String(255), nullable=True)  # Cached for historical reference
+    changed_by_name = Column(String(255), nullable=True)  # Cached for historical reference
+    
+    # Change details
+    changed_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), index=True)
+    reason = Column(Text, nullable=True)  # Optional reason for the change
+    notes = Column(Text, nullable=True)  # Additional notes about the change
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), nullable=False, default=func.now())
+    
+    # Index for efficient queries
+    __table_args__ = (
+        Index('idx_case_status_history_case_changed', 'case_id', 'changed_at'),
+        Index('idx_case_status_history_user_changed', 'changed_by', 'changed_at'),
+    )
+    
+    def __repr__(self):
+        return f"<CaseStatusHistory case_id={self.case_id} {self.old_status} -> {self.new_status} at {self.changed_at}>"

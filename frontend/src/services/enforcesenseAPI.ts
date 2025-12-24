@@ -50,6 +50,7 @@ export const enforcesenseAPI = {
   getCase: (id: string) => enforcementApiClient.get(`/enforcesense/cases/${id}`),
   createCase: (data: any) => enforcementApiClient.post('/enforcesense/cases', data),
   updateCase: (id: string, data: any) => enforcementApiClient.put(`/enforcesense/cases/${id}`, data),
+  getCaseStatusHistory: (id: string, params?: any) => enforcementApiClient.get(`/enforcesense/cases/${id}/status-history`, { params }),
 
   // Case Notes (with AI improvement)
   addCaseNote: (caseId: string, note: string, triggerAI: boolean = true) =>

@@ -30,7 +30,7 @@ from app.modules.enforcesense.models import (
     DebtorEntityType, CaseStatus, CaseType, TransactionType,
     LedgerEntry, LedgerEntryType, LedgerEntryStatus,
     PaymentAllocation, PaymentAllocationMethod,
-    Arrangement, ArrangementStatus, DebtorAuditLog
+    Arrangement, ArrangementStatus, DebtorAuditLog, CaseStatusHistory
 )
 from app.services.case_transaction_service import CaseTransactionService
 from app.services.payment_processing_service import PaymentProcessingService
@@ -901,6 +901,9 @@ async def update_case(
             detail="Case not found"
         )
     
+    # Track old status before update
+    old_status = case.status
+    
     # Update fields
     update_data = case_data.dict(exclude_unset=True)
     for field, value in update_data.items():
@@ -911,6 +914,27 @@ async def update_case(
         case.closed_date = datetime.now(timezone.utc)
     elif case_data.status != CaseStatus.CLOSED and case.closed_date:
         case.closed_date = None
+    
+    # Log status change if status was updated
+    if 'status' in update_data and old_status != case_data.status:
+        try:
+            status_history = CaseStatusHistory(
+                id=str(uuid.uuid4()),
+                tenant_id=current_user.tenant_id,
+                case_id=case_id,
+                old_status=old_status,
+                new_status=case_data.status,
+                changed_by=current_user.id,
+                changed_by_email=current_user.email,
+                changed_by_name=getattr(current_user, 'full_name', None) or current_user.email,
+                changed_at=datetime.now(timezone.utc),
+                reason=getattr(case_data, 'status_change_reason', None),
+                notes=getattr(case_data, 'status_change_notes', None)
+            )
+            db.add(status_history)
+        except Exception as e:
+            # Don't fail the update if history logging fails
+            print(f"Failed to log status change: {e}")
     
     await db.commit()
     await db.refresh(case)
