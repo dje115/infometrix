@@ -14,7 +14,7 @@ CRITICAL FINANCIAL RULES:
 - See: docs/enforcesense/DEVELOPMENT_RULES.md for development rules
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func
 from typing import List, Optional, Dict, Any
@@ -638,10 +638,52 @@ async def list_cases(
     if client_id:
         stmt = stmt.where(EnforcementCase.client_id == client_id)
     
+    # Get total count before pagination (need to build count query separately)
+    # Create a base query for counting
+    count_base = select(EnforcementCase).where(
+        and_(
+            EnforcementCase.tenant_id == current_user.tenant_id,
+            EnforcementCase.is_deleted == False
+        )
+    )
+    
+    if search:
+        count_base = count_base.outerjoin(Debtor, EnforcementCase.debtor_id == Debtor.id)
+        count_base = count_base.outerjoin(EnforcementClient, EnforcementCase.client_id == EnforcementClient.id)
+        count_base = count_base.where(
+            or_(
+                EnforcementCase.case_reference.ilike(f"%{search}%"),
+                EnforcementCase.client_reference.ilike(f"%{search}%"),
+                Debtor.legal_name.ilike(f"%{search}%"),
+                Debtor.first_name.ilike(f"%{search}%"),
+                Debtor.last_name.ilike(f"%{search}%"),
+                Debtor.email.ilike(f"%{search}%"),
+                EnforcementClient.name.ilike(f"%{search}%")
+            )
+        )
+    
+    if status:
+        count_base = count_base.where(EnforcementCase.status == status)
+    
+    if debtor_id:
+        count_base = count_base.where(EnforcementCase.debtor_id == debtor_id)
+    
+    if client_id:
+        count_base = count_base.where(EnforcementCase.client_id == client_id)
+    
+    count_stmt = select(func.count()).select_from(count_base.subquery())
+    count_result = await db.execute(count_stmt)
+    total_count = count_result.scalar() or 0
+    
+    # Apply pagination to main query
     stmt = stmt.order_by(EnforcementCase.created_at.desc()).offset(skip).limit(limit)
     
     result = await db.execute(stmt)
     cases = result.scalars().all()
+    
+    # Set total count in response headers
+    if response:
+        response.headers["X-Total-Count"] = str(total_count)
     
     return cases
 

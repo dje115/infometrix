@@ -148,6 +148,7 @@ const CaseDetail: React.FC = () => {
   const [tabValue, setTabValue] = useState(0);
   const [triggerAI, setTriggerAI] = useState(true);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
+  const [statusConfirmDialogOpen, setStatusConfirmDialogOpen] = useState(false);
   const [newStatus, setNewStatus] = useState('');
   const [arrangements, setArrangements] = useState<any[]>([]);
   const [loadingArrangements, setLoadingArrangements] = useState(false);
@@ -253,14 +254,19 @@ const CaseDetail: React.FC = () => {
     }
   };
 
-  const handleStatusUpdate = async () => {
+  const handleStatusChange = () => {
     if (!newStatus || newStatus === caseData?.status) {
       setStatusDialogOpen(false);
       return;
     }
+    // Show confirmation dialog
+    setStatusConfirmDialogOpen(true);
+  };
 
+  const handleStatusUpdate = async () => {
     try {
       setError(null);
+      setStatusConfirmDialogOpen(false);
       await enforcesenseAPI.updateCase(id!, { status: newStatus });
       setStatusDialogOpen(false);
       loadCase();
@@ -924,10 +930,33 @@ const CaseDetail: React.FC = () => {
           <Button onClick={() => setStatusDialogOpen(false)}>Cancel</Button>
           <Button 
             variant="contained" 
-            onClick={handleStatusUpdate}
+            onClick={handleStatusChange}
             disabled={!newStatus || newStatus === caseData?.status}
           >
-            Update Status
+            Continue
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Status Update Confirmation Dialog */}
+      <Dialog open={statusConfirmDialogOpen} onClose={() => setStatusConfirmDialogOpen(false)}>
+        <DialogTitle>Confirm Status Change</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to change the case status from{' '}
+            <strong>{caseData?.status?.charAt(0).toUpperCase() + caseData?.status?.slice(1).replace('_', ' ')}</strong> to{' '}
+            <strong>{newStatus.charAt(0).toUpperCase() + newStatus.slice(1).replace('_', ' ')}</strong>?
+          </Typography>
+          {(newStatus === 'closed' || newStatus === 'settled' || newStatus === 'cancelled') && (
+            <Alert severity="warning" sx={{ mt: 2 }}>
+              This action may affect case workflow and financial calculations. Please ensure this is correct.
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setStatusConfirmDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" color="primary" onClick={handleStatusUpdate}>
+            Confirm Change
           </Button>
         </DialogActions>
       </Dialog>

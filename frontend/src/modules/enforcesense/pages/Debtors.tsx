@@ -27,7 +27,8 @@ import {
   CircularProgress,
   Grid,
   Card,
-  CardContent
+  CardContent,
+  Skeleton
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -228,9 +229,34 @@ const Debtors: React.FC = () => {
 
       {/* Debtors Table */}
       {loading ? (
-        <Box display="flex" justifyContent="center" p={4}>
-          <CircularProgress />
-        </Box>
+        <TableContainer component={Paper}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell><Skeleton variant="text" width={100} /></TableCell>
+                <TableCell><Skeleton variant="text" width={150} /></TableCell>
+                <TableCell><Skeleton variant="text" width={120} /></TableCell>
+                <TableCell><Skeleton variant="text" width={100} /></TableCell>
+                <TableCell><Skeleton variant="text" width={100} /></TableCell>
+                <TableCell><Skeleton variant="text" width={80} /></TableCell>
+                <TableCell><Skeleton variant="text" width={100} /></TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {[...Array(5)].map((_, idx) => (
+                <TableRow key={idx}>
+                  <TableCell><Skeleton variant="circular" width={32} height={32} /></TableCell>
+                  <TableCell><Skeleton variant="text" /></TableCell>
+                  <TableCell><Skeleton variant="text" /></TableCell>
+                  <TableCell><Skeleton variant="text" /></TableCell>
+                  <TableCell><Skeleton variant="text" /></TableCell>
+                  <TableCell><Skeleton variant="rectangular" width={60} height={24} /></TableCell>
+                  <TableCell><Skeleton variant="circular" width={32} height={32} /></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
       ) : (
         <TableContainer component={Paper}>
           <Table>
