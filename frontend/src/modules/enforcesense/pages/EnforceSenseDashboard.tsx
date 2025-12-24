@@ -28,6 +28,7 @@ import {
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { enforcesenseAPI } from '../../../services/enforcesenseAPI';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 interface DashboardStats {
   total_debtors: number;
@@ -184,13 +185,94 @@ const EnforceSenseDashboard: React.FC = () => {
             </Grid>
           </Grid>
 
-          {/* Cases by Status */}
-          <Grid container spacing={3}>
+          {/* Cases by Status - Chart and Table */}
+          <Grid container spacing={3} sx={{ mb: 4 }}>
             <Grid item xs={12} md={6}>
               <Card>
                 <CardContent>
                   <Typography variant="h6" gutterBottom>
                     Cases by Status
+                  </Typography>
+                  {Object.keys(stats.cases_by_status).length > 0 ? (
+                    <ResponsiveContainer width="100%" height={300}>
+                      <PieChart>
+                        <Pie
+                          data={Object.entries(stats.cases_by_status).map(([status, count]) => ({
+                            name: status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' '),
+                            value: count
+                          }))}
+                          cx="50%"
+                          cy="50%"
+                          labelLine={false}
+                          label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                          outerRadius={80}
+                          fill="#8884d8"
+                          dataKey="value"
+                        >
+                          {Object.entries(stats.cases_by_status).map(([status], index) => {
+                            const colors = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82CA9D'];
+                            return <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />;
+                          })}
+                        </Pie>
+                        <Tooltip />
+                        <Legend />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <Box sx={{ height: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Typography color="text.secondary">No cases data available</Typography>
+                    </Box>
+                  )}
+                </CardContent>
+              </Card>
+            </Grid>
+
+            <Grid item xs={12} md={6}>
+              <Card>
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    Financial Overview
+                  </Typography>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart
+                      data={[
+                        {
+                          name: 'Original',
+                          amount: stats.total_original_amount
+                        },
+                        {
+                          name: 'Fees',
+                          amount: stats.total_fees_charged
+                        },
+                        {
+                          name: 'Payments',
+                          amount: stats.total_payments_received
+                        },
+                        {
+                          name: 'Balance',
+                          amount: stats.total_current_balance
+                        }
+                      ]}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" />
+                      <YAxis tickFormatter={(value) => `£${(value / 1000).toFixed(0)}k`} />
+                      <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                      <Bar dataKey="amount" fill="#8884d8" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+
+          {/* Detailed Financial Summary */}
+          <Grid container spacing={3} sx={{ mb: 4 }}>
+            <Grid item xs={12} md={6}>
+              <Card>
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    Cases by Status (Table)
                   </Typography>
                   <TableContainer>
                     <Table size="small">
@@ -249,6 +331,16 @@ const EnforceSenseDashboard: React.FC = () => {
                       <Typography>Current Balance:</Typography>
                       <Typography fontWeight="bold" color="primary.main">
                         {formatCurrency(stats.total_current_balance)}
+                      </Typography>
+                    </Box>
+                    <Box display="flex" justifyContent="space-between" mb={2} pt={2} borderTop={1} borderColor="divider">
+                      <Typography variant="subtitle2" fontWeight="bold">
+                        Collection Rate:
+                      </Typography>
+                      <Typography variant="subtitle2" fontWeight="bold" color="success.main">
+                        {stats.total_original_amount > 0
+                          ? ((stats.total_payments_received / stats.total_original_amount) * 100).toFixed(1)
+                          : 0}%
                       </Typography>
                     </Box>
                   </Box>

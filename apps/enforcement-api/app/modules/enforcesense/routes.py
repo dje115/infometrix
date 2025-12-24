@@ -284,7 +284,7 @@ async def get_debtor(
     debtor_id: str,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
-    request: Request = None
+    request: Optional[Request] = None
 ):
     """Get a single debtor and log the access"""
     await check_permission(current_user, "enforcesense:view")
@@ -1694,4 +1694,72 @@ async def update_arrangement_status(
     await db.refresh(arrangement)
     
     return arrangement
+
+
+
+# ============================================================================
+# Audit Log Models
+# ============================================================================
+
+class DebtorAuditLogResponse(BaseModel):
+    id: str
+    debtor_id: str
+    user_id: str
+    user_email: Optional[str]
+    user_name: Optional[str]
+    accessed_at: datetime
+    ip_address: Optional[str]
+    user_agent: Optional[str]
+    action_type: str
+    metadata: Dict[str, Any]
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+# ============================================================================
+# Audit Log Endpoints
+# ============================================================================
+
+@router.get("/debtors/{debtor_id}/audit", response_model=List[DebtorAuditLogResponse])
+async def get_debtor_audit_logs(
+    debtor_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user),
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0)
+):
+    """Get audit logs for a debtor record"""
+    await check_permission(current_user, "enforcesense:view")
+    
+    # Verify debtor exists and belongs to tenant
+    debtor_stmt = select(Debtor).where(
+        and_(
+            Debtor.id == debtor_id,
+            Debtor.tenant_id == current_user.tenant_id,
+            Debtor.is_deleted == False
+        )
+    )
+    debtor_result = await db.execute(debtor_stmt)
+    debtor = debtor_result.scalar_one_or_none()
+    
+    if not debtor:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Debtor not found"
+        )
+    
+    # Get audit logs
+    stmt = select(DebtorAuditLog).where(
+        and_(
+            DebtorAuditLog.debtor_id == debtor_id,
+            DebtorAuditLog.tenant_id == current_user.tenant_id
+        )
+    ).order_by(DebtorAuditLog.accessed_at.desc()).limit(limit).offset(offset)
+    
+    result = await db.execute(stmt)
+    audit_logs = result.scalars().all()
+    
+    return audit_logs
 
