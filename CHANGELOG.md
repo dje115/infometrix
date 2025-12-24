@@ -6,6 +6,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.7.0] - 2025-12-25
+
+### Added
+- **Bulk Operations for Cases**: Added bulk status update and bulk assignment functionality with full UI support
+- **Case Status History**: Complete audit trail of case status changes with dedicated tab in CaseDetail page
+- **Debtor Address Management**: Full CRUD operations for debtor address history with API endpoints and UI
+- **Debtor Vulnerability Management**: API endpoints and UI for managing vulnerability indicators and notes
+- **Enhanced Dashboard**: Added pie charts for case status distribution and bar charts for financial overview
+- **Debtor Audit Trail**: Track and display who accesses debtor records with timestamp and user information
+
+### Improved
+- **CaseDetail Page**: Added Status History tab, improved case assignment UI, enhanced confirmation dialogs
+- **Cases List Page**: Added bulk operations toolbar, checkboxes for selection, improved sorting and filtering
+- **DebtorDetail Page**: Enhanced address history display, added vulnerability management section
+- **Error Handling**: Improved error boundaries and user feedback throughout the application
+
+### Fixed
+- Fixed status history endpoint response model to include all required fields
+- Improved case assignment workflow with better user selection
+- Enhanced CSV export functionality for all list pages
+
+---
+
 ## [3.1.0] - 2025-11-30
 
 ### 🚀 Major Feature: Complete SLA & Support Contracts System
