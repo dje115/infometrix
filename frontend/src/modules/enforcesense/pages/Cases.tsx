@@ -425,6 +425,53 @@ const Cases: React.FC = () => {
         </Grid>
       </Paper>
 
+      {/* Bulk Actions Toolbar */}
+      {selectedCases.length > 0 && (
+        <Paper sx={{ mb: 2, p: 1, bgcolor: 'primary.light' }}>
+          <Toolbar sx={{ minHeight: '48px !important', px: '16px !important' }}>
+            <Typography sx={{ flex: '1 1 100%' }} color="inherit" variant="subtitle1" component="div">
+              {selectedCases.length} case(s) selected
+            </Typography>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<MoreVertIcon />}
+              onClick={handleBulkAction}
+              sx={{ mr: 1 }}
+            >
+              Bulk Actions
+            </Button>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => setSelectedCases([])}
+            >
+              Clear Selection
+            </Button>
+          </Toolbar>
+        </Paper>
+      )}
+
+      {/* Bulk Actions Menu */}
+      <Menu
+        anchorEl={bulkActionMenuAnchor}
+        open={Boolean(bulkActionMenuAnchor)}
+        onClose={() => setBulkActionMenuAnchor(null)}
+      >
+        <MenuItem onClick={() => {
+          setBulkActionMenuAnchor(null);
+          setBulkStatusDialogOpen(true);
+        }}>
+          Update Status
+        </MenuItem>
+        <MenuItem onClick={() => {
+          setBulkActionMenuAnchor(null);
+          setBulkAssignDialogOpen(true);
+        }}>
+          Assign Agent
+        </MenuItem>
+      </Menu>
+
       {/* Cases Table */}
       {loading ? (
         <TableContainer component={Paper}>
