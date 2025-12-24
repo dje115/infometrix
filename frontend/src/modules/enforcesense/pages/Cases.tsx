@@ -29,7 +29,11 @@ import {
   Card,
   CardContent,
   Skeleton,
-  TableSortLabel
+  TableSortLabel,
+  Checkbox,
+  Toolbar,
+  Menu,
+  MenuItem
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -39,7 +43,9 @@ import {
   Edit as EditIcon,
   ArrowUpward as ArrowUpwardIcon,
   ArrowDownward as ArrowDownwardIcon,
-  FileDownload as FileDownloadIcon
+  FileDownload as FileDownloadIcon,
+  MoreVert as MoreVertIcon,
+  Assignment as AssignmentIcon
 } from '@mui/icons-material';
 import TablePagination from '@mui/material/TablePagination';
 import { useNavigate } from 'react-router-dom';
@@ -81,6 +87,14 @@ const Cases: React.FC = () => {
   const [totalCount, setTotalCount] = useState(0);
   const [debtors, setDebtors] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
+  const [selectedCases, setSelectedCases] = useState<string[]>([]);
+  const [bulkActionMenuAnchor, setBulkActionMenuAnchor] = useState<null | HTMLElement>(null);
+  const [bulkStatusDialogOpen, setBulkStatusDialogOpen] = useState(false);
+  const [bulkAssignDialogOpen, setBulkAssignDialogOpen] = useState(false);
+  const [bulkStatus, setBulkStatus] = useState<string>('active');
+  const [bulkAssignedAgent, setBulkAssignedAgent] = useState<string>('');
+  const [users, setUsers] = useState<any[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
   const [newCase, setNewCase] = useState({
     debtor_id: '',
     client_id: '',

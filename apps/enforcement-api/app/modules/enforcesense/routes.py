@@ -1853,3 +1853,136 @@ async def get_case_status_history(
     
     return status_history
 
+
+# ============================================================================
+# Bulk Operations
+# ============================================================================
+
+class BulkCaseOperationRequest(BaseModel):
+    case_ids: List[str] = Field(..., min_items=1, description="List of case IDs to update")
+    action: str = Field(..., description="Action to perform: update_status, assign")
+    status: Optional[CaseStatus] = Field(None, description="New status (for update_status action)")
+    assigned_agent: Optional[str] = Field(None, description="User ID to assign (for assign action)")
+
+
+@router.post("/cases/bulk-update-status")
+async def bulk_update_case_status(
+    request: BulkCaseOperationRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Bulk update case status"""
+    await check_permission(current_user, "enforcesense:update_case")
+    
+    if request.action != "update_status" or not request.status:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid action or missing status"
+        )
+    
+    # Verify all cases belong to tenant
+    stmt = select(EnforcementCase).where(
+        and_(
+            EnforcementCase.id.in_(request.case_ids),
+            EnforcementCase.tenant_id == current_user.tenant_id,
+            EnforcementCase.is_deleted == False
+        )
+    )
+    result = await db.execute(stmt)
+    cases = result.scalars().all()
+    
+    if len(cases) != len(request.case_ids):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Some cases not found or do not belong to tenant"
+        )
+    
+    # Update status and log history
+    updated_count = 0
+    for case in cases:
+        old_status = case.status
+        if old_status != request.status:
+            case.status = request.status
+            
+            # Handle closed_date
+            if request.status == CaseStatus.CLOSED and not case.closed_date:
+                case.closed_date = datetime.now(timezone.utc)
+            elif request.status != CaseStatus.CLOSED and case.closed_date:
+                case.closed_date = None
+            
+            # Log status change
+            try:
+                status_history = CaseStatusHistory(
+                    id=str(uuid.uuid4()),
+                    tenant_id=current_user.tenant_id,
+                    case_id=case.id,
+                    old_status=old_status,
+                    new_status=request.status,
+                    changed_by=current_user.id,
+                    changed_by_email=current_user.email,
+                    changed_by_name=getattr(current_user, 'full_name', None) or current_user.email,
+                    changed_at=datetime.now(timezone.utc),
+                    reason="Bulk status update",
+                    notes=None
+                )
+                db.add(status_history)
+            except Exception as e:
+                print(f"Failed to log status change for case {case.id}: {e}")
+            
+            updated_count += 1
+    
+    await db.commit()
+    
+    return {
+        "success": True,
+        "updated_count": updated_count,
+        "message": f"Successfully updated status for {updated_count} case(s)"
+    }
+
+
+@router.post("/cases/bulk-assign")
+async def bulk_assign_cases(
+    request: BulkCaseOperationRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Bulk assign cases to an agent"""
+    await check_permission(current_user, "enforcesense:update_case")
+    
+    if request.action != "assign":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid action"
+        )
+    
+    # Verify all cases belong to tenant
+    stmt = select(EnforcementCase).where(
+        and_(
+            EnforcementCase.id.in_(request.case_ids),
+            EnforcementCase.tenant_id == current_user.tenant_id,
+            EnforcementCase.is_deleted == False
+        )
+    )
+    result = await db.execute(stmt)
+    cases = result.scalars().all()
+    
+    if len(cases) != len(request.case_ids):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Some cases not found or do not belong to tenant"
+        )
+    
+    # Update assigned_agent
+    updated_count = 0
+    for case in cases:
+        case.assigned_agent = request.assigned_agent  # Can be None to unassign
+        updated_count += 1
+    
+    await db.commit()
+    
+    return {
+        "success": True,
+        "updated_count": updated_count,
+        "message": f"Successfully assigned {updated_count} case(s)"
+    }
+

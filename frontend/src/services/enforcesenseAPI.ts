@@ -51,6 +51,8 @@ export const enforcesenseAPI = {
   createCase: (data: any) => enforcementApiClient.post('/enforcesense/cases', data),
   updateCase: (id: string, data: any) => enforcementApiClient.put(`/enforcesense/cases/${id}`, data),
   getCaseStatusHistory: (id: string, params?: any) => enforcementApiClient.get(`/enforcesense/cases/${id}/status-history`, { params }),
+  bulkUpdateCaseStatus: (data: any) => enforcementApiClient.post('/enforcesense/cases/bulk-update-status', data),
+  bulkAssignCases: (data: any) => enforcementApiClient.post('/enforcesense/cases/bulk-assign', data),
 
   // Case Notes (with AI improvement)
   addCaseNote: (caseId: string, note: string, triggerAI: boolean = true) =>
