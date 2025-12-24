@@ -27,7 +27,8 @@ import {
   Refresh as RefreshIcon,
   Search as SearchIcon,
   Visibility as ViewIcon,
-  Business as BusinessIcon
+  Business as BusinessIcon,
+  Link as LinkIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { enforcesenseAPI } from '../../../services/enforcesenseAPI';
@@ -35,6 +36,7 @@ import TablePagination from '@mui/material/TablePagination';
 
 interface Client {
   id: string;
+  customer_id?: string; // Link to main CRM Customer
   name: string;
   company_name?: string;
   email?: string;
@@ -199,6 +201,7 @@ const Clients: React.FC = () => {
                 <TableCell>Company</TableCell>
                 <TableCell>Email</TableCell>
                 <TableCell>Phone</TableCell>
+                <TableCell>CRM Link</TableCell>
                 <TableCell>Created</TableCell>
                 <TableCell>Actions</TableCell>
               </TableRow>
@@ -226,6 +229,28 @@ const Clients: React.FC = () => {
                     <TableCell>{client.company_name || 'N/A'}</TableCell>
                     <TableCell>{client.email || 'N/A'}</TableCell>
                     <TableCell>{client.phone || 'N/A'}</TableCell>
+                    <TableCell>
+                      {client.customer_id ? (
+                        <Tooltip title="Linked to CRM Customer">
+                          <Chip 
+                            icon={<LinkIcon />} 
+                            label="Linked" 
+                            size="small" 
+                            color="success" 
+                            variant="outlined"
+                          />
+                        </Tooltip>
+                      ) : (
+                        <Tooltip title="Not linked to CRM">
+                          <Chip 
+                            label="Not Linked" 
+                            size="small" 
+                            color="default" 
+                            variant="outlined"
+                          />
+                        </Tooltip>
+                      )}
+                    </TableCell>
                     <TableCell>
                       {new Date(client.created_at).toLocaleDateString('en-GB')}
                     </TableCell>

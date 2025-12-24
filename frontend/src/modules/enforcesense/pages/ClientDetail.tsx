@@ -29,13 +29,15 @@ import {
   ArrowBack as ArrowBackIcon,
   Edit as EditIcon,
   Business as BusinessIcon,
-  Folder as FolderIcon
+  Folder as FolderIcon,
+  OpenInNew as OpenInNewIcon
 } from '@mui/icons-material';
 import { useNavigate, useParams } from 'react-router-dom';
 import { enforcesenseAPI } from '../../../services/enforcesenseAPI';
 
 interface Client {
   id: string;
+  customer_id?: string; // Link to main CRM Customer
   name: string;
   company_name?: string;
   company_registration_number?: string;
@@ -43,6 +45,8 @@ interface Client {
   phone?: string;
   address?: string;
   postcode?: string;
+  reference_prefix?: string;
+  default_case_type?: string;
   created_at: string;
   updated_at: string;
 }
@@ -168,14 +172,28 @@ const ClientDetail: React.FC = () => {
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Created {new Date(client.created_at).toLocaleDateString('en-GB')}
+            {client.customer_id && (
+              <> • Linked to CRM Customer</>
+            )}
           </Typography>
         </Box>
+        {client.customer_id && (
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<OpenInNewIcon />}
+            onClick={() => navigate(`/customers/${client.customer_id}`)}
+            sx={{ mr: 1 }}
+          >
+            View in CRM
+          </Button>
+        )}
         <Button
           variant="outlined"
           startIcon={<EditIcon />}
           onClick={() => setEditDialogOpen(true)}
         >
-          Edit
+          Edit Settings
         </Button>
       </Box>
 
@@ -185,12 +203,32 @@ const ClientDetail: React.FC = () => {
         </Alert>
       )}
 
+      {client.customer_id ? (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          <strong>Note:</strong> This client is linked to a CRM Customer. Client data (name, contacts, sales) is managed in the main CRM. 
+          This page shows enforcement-specific settings and features only.
+        </Alert>
+      ) : (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          <strong>Not linked to CRM:</strong> This enforcement client is not linked to a CRM Customer. 
+          To manage client data (name, contacts, sales), link this client to a Customer in the main CRM.
+        </Alert>
+      )}
+
       <Grid container spacing={3}>
         <Grid item xs={12} md={8}>
           <Paper sx={{ p: 3, mb: 3 }}>
             <Typography variant="h6" gutterBottom>
               Client Information
             </Typography>
+            {client.customer_id && (
+              <Box sx={{ mb: 2, p: 1.5, bgcolor: 'info.light', borderRadius: 1 }}>
+                <Typography variant="body2" color="info.dark">
+                  <strong>Linked to CRM Customer:</strong> Basic client information (name, company, contacts) is managed in the main CRM. 
+                  Click "View in CRM" above to manage client data, contacts, and sales activities.
+                </Typography>
+              </Box>
+            )}
             <Grid container spacing={2}>
               <Grid item xs={12} md={6}>
                 <Typography variant="body2" color="text.secondary">
