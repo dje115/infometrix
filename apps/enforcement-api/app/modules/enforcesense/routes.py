@@ -180,8 +180,6 @@ class CaseCreate(BaseModel):
     original_amount: Decimal = Field(..., gt=0, le=Decimal('10000000'), description="Original debt amount (required, must be > 0)")
     notes: Optional[str] = Field(None, max_length=5000, description="Initial case notes")
     assigned_agent: Optional[str] = Field(None, description="User ID of assigned agent")
-    notes: Optional[str] = None
-    assigned_agent: Optional[str] = None
 
 
 class CaseUpdate(BaseModel):

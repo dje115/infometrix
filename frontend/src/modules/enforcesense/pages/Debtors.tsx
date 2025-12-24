@@ -37,7 +37,8 @@ import {
   Visibility as ViewIcon,
   Edit as EditIcon,
   Person as PersonIcon,
-  Business as BusinessIcon
+  Business as BusinessIcon,
+  FileDownload as FileDownloadIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { enforcesenseAPI } from '../../../services/enforcesenseAPI';
@@ -163,6 +164,14 @@ const Debtors: React.FC = () => {
           Debtors
         </Typography>
         <Box>
+          <Button
+            variant="outlined"
+            startIcon={<FileDownloadIcon />}
+            onClick={handleExport}
+            sx={{ mr: 1 }}
+          >
+            Export CSV
+          </Button>
           <Button
             variant="contained"
             startIcon={<AddIcon />}

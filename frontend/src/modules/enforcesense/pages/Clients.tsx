@@ -29,7 +29,8 @@ import {
   Search as SearchIcon,
   Visibility as ViewIcon,
   Business as BusinessIcon,
-  Link as LinkIcon
+  Link as LinkIcon,
+  FileDownload as FileDownloadIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { enforcesenseAPI } from '../../../services/enforcesenseAPI';
@@ -96,6 +97,34 @@ const Clients: React.FC = () => {
     }
   };
 
+  const handleExport = () => {
+    // Export clients to CSV
+    const headers = ['Name', 'Company Name', 'Email', 'Phone', 'CRM Linked', 'Created'];
+    const rows = clients.map(client => [
+      client.name,
+      client.company_name || '',
+      client.email || '',
+      client.phone || '',
+      client.customer_id ? 'Yes' : 'No',
+      new Date(client.created_at).toLocaleDateString('en-GB')
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `clients_export_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleCreateClient = async () => {
     // Validation
     if (!newClient.name.trim()) {
@@ -141,6 +170,14 @@ const Clients: React.FC = () => {
           Enforcement Clients
         </Typography>
         <Box>
+          <Button
+            variant="outlined"
+            startIcon={<FileDownloadIcon />}
+            onClick={handleExport}
+            sx={{ mr: 1 }}
+          >
+            Export CSV
+          </Button>
           <Button
             variant="contained"
             startIcon={<AddIcon />}

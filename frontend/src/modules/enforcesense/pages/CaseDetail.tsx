@@ -34,7 +34,8 @@ import {
   FormControl,
   InputLabel,
   Tooltip,
-  Badge
+  Badge,
+  CircularProgress as MUICircularProgress
 } from '@mui/material';
 import {
   ArrowBack as ArrowBackIcon,
@@ -51,6 +52,7 @@ import {
 } from '@mui/icons-material';
 import { useNavigate, useParams } from 'react-router-dom';
 import { enforcesenseAPI } from '../../../services/enforcesenseAPI';
+import { userAPI } from '../../../services/api';
 
 interface Case {
   id: string;
@@ -957,6 +959,48 @@ const CaseDetail: React.FC = () => {
           <Button onClick={() => setStatusConfirmDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" color="primary" onClick={handleStatusUpdate}>
             Confirm Change
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Assign Agent Dialog */}
+      <Dialog open={assignDialogOpen} onClose={() => setAssignDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Assign Agent</DialogTitle>
+        <DialogContent>
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          )}
+          <FormControl fullWidth sx={{ mt: 2 }}>
+            <InputLabel>Select Agent</InputLabel>
+            <Select
+              value={selectedUserId}
+              label="Select Agent"
+              onChange={(e) => setSelectedUserId(e.target.value)}
+              onOpen={() => {
+                if (users.length === 0) {
+                  loadUsers();
+                }
+              }}
+            >
+              <MenuItem value="">Unassign</MenuItem>
+              {loadingUsers ? (
+                <MenuItem disabled>Loading users...</MenuItem>
+              ) : (
+                users.map((user) => (
+                  <MenuItem key={user.id} value={user.id}>
+                    {user.full_name || user.email} ({user.role})
+                  </MenuItem>
+                ))
+              )}
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAssignDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={handleAssignAgent}>
+            Assign
           </Button>
         </DialogActions>
       </Dialog>
