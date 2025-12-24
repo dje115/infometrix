@@ -661,6 +661,72 @@ const Cases: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Bulk Status Update Dialog */}
+      <Dialog open={bulkStatusDialogOpen} onClose={() => setBulkStatusDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Bulk Update Status</DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            This will update the status of {selectedCases.length} selected case(s).
+          </Alert>
+          <FormControl fullWidth sx={{ mt: 2 }}>
+            <InputLabel>New Status</InputLabel>
+            <Select
+              value={bulkStatus}
+              label="New Status"
+              onChange={(e) => setBulkStatus(e.target.value)}
+            >
+              <MenuItem value="draft">Draft</MenuItem>
+              <MenuItem value="active">Active</MenuItem>
+              <MenuItem value="on_hold">On Hold</MenuItem>
+              <MenuItem value="settled">Settled</MenuItem>
+              <MenuItem value="closed">Closed</MenuItem>
+              <MenuItem value="cancelled">Cancelled</MenuItem>
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBulkStatusDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={handleBulkStatusUpdate}>
+            Update Status
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Bulk Assign Dialog */}
+      <Dialog open={bulkAssignDialogOpen} onClose={() => setBulkAssignDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Bulk Assign Cases</DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            This will assign {selectedCases.length} selected case(s) to an agent.
+          </Alert>
+          <FormControl fullWidth sx={{ mt: 2 }}>
+            <InputLabel>Assign To</InputLabel>
+            <Select
+              value={bulkAssignedAgent}
+              label="Assign To"
+              onChange={(e) => setBulkAssignedAgent(e.target.value)}
+            >
+              <MenuItem value="">Unassign</MenuItem>
+              {loadingUsers ? (
+                <MenuItem disabled>Loading users...</MenuItem>
+              ) : (
+                users.map((user) => (
+                  <MenuItem key={user.id} value={user.id}>
+                    {user.full_name || user.email} ({user.role})
+                  </MenuItem>
+                ))
+              )}
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBulkAssignDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={handleBulkAssign}>
+            Assign
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };
