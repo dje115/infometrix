@@ -91,7 +91,7 @@ class CaseTransactionService:
             amount=amount,
             description=description,
             reference=reference,
-            metadata=metadata or {},
+            entry_metadata=metadata or {},
             created_by=created_by,
             status=status,
             posted_at=datetime.now(timezone.utc) if status == LedgerEntryStatus.CLEARED else None
@@ -440,10 +440,10 @@ class CaseTransactionService:
         
         # Mark original entry as reversed
         original_entry.status = LedgerEntryStatus.REVERSED
-        original_entry.metadata = original_entry.metadata or {}
-        original_entry.metadata["reversed_at"] = datetime.now(timezone.utc).isoformat()
-        original_entry.metadata["reversed_by"] = reversed_by
-        original_entry.metadata["reversal_reason"] = reason
+        original_entry.entry_metadata = original_entry.entry_metadata or {}
+        original_entry.entry_metadata["reversed_at"] = datetime.now(timezone.utc).isoformat()
+        original_entry.entry_metadata["reversed_by"] = reversed_by
+        original_entry.entry_metadata["reversal_reason"] = reason
         
         self.db.add(reversal_entry)
         await self.db.flush()

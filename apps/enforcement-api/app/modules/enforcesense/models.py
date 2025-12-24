@@ -448,7 +448,8 @@ class LedgerEntry(Base):
     reversal_reason = Column(Text, nullable=True)
     
     # Metadata (JSON)
-    metadata = Column(JSON, default=dict)
+    # Note: Using 'entry_metadata' instead of 'metadata' to avoid SQLAlchemy reserved word conflict
+    entry_metadata = Column(JSON, default=dict)
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
