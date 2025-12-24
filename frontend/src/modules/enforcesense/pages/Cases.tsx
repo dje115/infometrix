@@ -119,12 +119,17 @@ const Cases: React.FC = () => {
       }
       const response = await enforcesenseAPI.listCases(params);
       setCases(response.data || []);
-      // Note: API should return total count in headers or response
-      // For now, we'll estimate based on returned data
-      if (response.data && response.data.length === rowsPerPage) {
-        setTotalCount((page + 1) * rowsPerPage + 1); // Estimate
+      // Get total count from response headers
+      const totalCountHeader = response.headers?.['x-total-count'] || response.headers?.['X-Total-Count'];
+      if (totalCountHeader) {
+        setTotalCount(parseInt(totalCountHeader, 10));
       } else {
-        setTotalCount(page * rowsPerPage + (response.data?.length || 0));
+        // Fallback: estimate based on returned data
+        if (response.data && response.data.length === rowsPerPage) {
+          setTotalCount((page + 1) * rowsPerPage + 1);
+        } else {
+          setTotalCount(page * rowsPerPage + (response.data?.length || 0));
+        }
       }
     } catch (err: any) {
       console.error('Failed to load cases:', err);
