@@ -171,6 +171,37 @@ const Cases: React.FC = () => {
     }
   };
 
+  const handleExport = () => {
+    // Export cases to CSV
+    const headers = ['Case Reference', 'Client Reference', 'Debtor', 'Client', 'Type', 'Status', 'Original Amount', 'Current Balance', 'Created'];
+    const rows = cases.map(caseItem => [
+      caseItem.case_reference,
+      caseItem.client_reference || '',
+      caseItem.debtor?.legal_name || 'N/A',
+      caseItem.client?.name || 'N/A',
+      caseItem.case_type.replace('_', ' '),
+      caseItem.status,
+      caseItem.original_amount.toFixed(2),
+      caseItem.current_balance.toFixed(2),
+      new Date(caseItem.created_at).toLocaleDateString('en-GB')
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `cases_export_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleCreateCase = async () => {
     // Validation
     if (!newCase.debtor_id) {
