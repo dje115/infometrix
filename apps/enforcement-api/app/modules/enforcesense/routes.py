@@ -1787,3 +1787,67 @@ async def get_debtor_audit_logs(
     
     return audit_logs
 
+
+
+# ============================================================================
+# Case Status History
+# ============================================================================
+
+class CaseStatusHistoryResponse(BaseModel):
+    id: str
+    case_id: str
+    old_status: Optional[str]
+    new_status: str
+    changed_by: str
+    changed_by_email: Optional[str]
+    changed_by_name: Optional[str]
+    changed_at: datetime
+    reason: Optional[str]
+    notes: Optional[str]
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+@router.get("/cases/{case_id}/status-history", response_model=List[CaseStatusHistoryResponse])
+async def get_case_status_history(
+    case_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user),
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0)
+):
+    """Get status change history for a case"""
+    await check_permission(current_user, "enforcesense:view")
+    
+    # Verify case exists and belongs to tenant
+    case_stmt = select(EnforcementCase).where(
+        and_(
+            EnforcementCase.id == case_id,
+            EnforcementCase.tenant_id == current_user.tenant_id,
+            EnforcementCase.is_deleted == False
+        )
+    )
+    case_result = await db.execute(case_stmt)
+    case = case_result.scalar_one_or_none()
+    
+    if not case:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Case not found"
+        )
+    
+    # Get status history
+    stmt = select(CaseStatusHistory).where(
+        and_(
+            CaseStatusHistory.case_id == case_id,
+            CaseStatusHistory.tenant_id == current_user.tenant_id
+        )
+    ).order_by(CaseStatusHistory.changed_at.desc()).limit(limit).offset(offset)
+    
+    result = await db.execute(stmt)
+    status_history = result.scalars().all()
+    
+    return status_history
+
