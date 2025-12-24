@@ -38,6 +38,10 @@ export const enforcesenseAPI = {
   updateDebtor: (id: string, data: any) => enforcementApiClient.put(`/enforcesense/debtors/${id}`, data),
   deleteDebtor: (id: string) => enforcementApiClient.delete(`/enforcesense/debtors/${id}`),
   getDebtorAuditLogs: (id: string, params?: any) => enforcementApiClient.get(`/enforcesense/debtors/${id}/audit`, { params }),
+  addDebtorAddress: (debtorId: string, data: any) => enforcementApiClient.post(`/enforcesense/debtors/${debtorId}/addresses`, data),
+  updateDebtorAddress: (debtorId: string, addressId: string, data: any) => enforcementApiClient.put(`/enforcesense/debtors/${debtorId}/addresses/${addressId}`, data),
+  deleteDebtorAddress: (debtorId: string, addressId: string) => enforcementApiClient.delete(`/enforcesense/debtors/${debtorId}/addresses/${addressId}`),
+  updateDebtorVulnerability: (debtorId: string, data: any) => enforcementApiClient.put(`/enforcesense/debtors/${debtorId}/vulnerability`, data),
 
   // Clients
   listClients: (params?: any) => enforcementApiClient.get('/enforcesense/clients', { params }),
