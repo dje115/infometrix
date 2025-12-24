@@ -1790,6 +1790,224 @@ async def get_debtor_audit_logs(
     return audit_logs
 
 
+# ============================================================================
+# Debtor Address Management
+# ============================================================================
+
+class AddressCreate(BaseModel):
+    address: str = Field(..., min_length=1, max_length=500, description="Full address")
+    postcode: Optional[str] = Field(None, max_length=20, description="Postcode")
+    is_current: bool = Field(False, description="Set as current address")
+    from_date: Optional[datetime] = Field(None, description="Date address became valid")
+    to_date: Optional[datetime] = Field(None, description="Date address ended (if not current)")
+    notes: Optional[str] = Field(None, max_length=500, description="Additional notes about this address")
+
+
+class AddressUpdate(BaseModel):
+    address: Optional[str] = Field(None, min_length=1, max_length=500)
+    postcode: Optional[str] = Field(None, max_length=20)
+    is_current: Optional[bool] = None
+    from_date: Optional[datetime] = None
+    to_date: Optional[datetime] = None
+    notes: Optional[str] = Field(None, max_length=500)
+
+
+@router.post("/debtors/{debtor_id}/addresses", response_model=DebtorResponse)
+async def add_debtor_address(
+    debtor_id: str,
+    address_data: AddressCreate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Add a new address to debtor's address history"""
+    await check_permission(current_user, "enforcesense:update_case")
+    
+    stmt = select(Debtor).where(
+        and_(
+            Debtor.id == debtor_id,
+            Debtor.tenant_id == current_user.tenant_id,
+            Debtor.is_deleted == False
+        )
+    )
+    result = await db.execute(stmt)
+    debtor = result.scalar_one_or_none()
+    
+    if not debtor:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Debtor not found"
+        )
+    
+    # Get current address history
+    address_history = debtor.address_history or []
+    
+    # If setting as current, mark all others as not current
+    if address_data.is_current:
+        for addr in address_history:
+            addr['is_current'] = False
+    
+    # Add new address
+    new_address = {
+        'id': str(uuid.uuid4()),
+        'address': address_data.address,
+        'postcode': address_data.postcode,
+        'is_current': address_data.is_current,
+        'from_date': address_data.from_date.isoformat() if address_data.from_date else None,
+        'to_date': address_data.to_date.isoformat() if address_data.to_date else None,
+        'notes': address_data.notes,
+        'added_at': datetime.now(timezone.utc).isoformat(),
+        'added_by': current_user.id
+    }
+    address_history.append(new_address)
+    
+    debtor.address_history = address_history
+    await db.commit()
+    await db.refresh(debtor)
+    
+    return debtor
+
+
+@router.put("/debtors/{debtor_id}/addresses/{address_id}", response_model=DebtorResponse)
+async def update_debtor_address(
+    debtor_id: str,
+    address_id: str,
+    address_data: AddressUpdate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update an address in debtor's address history"""
+    await check_permission(current_user, "enforcesense:update_case")
+    
+    stmt = select(Debtor).where(
+        and_(
+            Debtor.id == debtor_id,
+            Debtor.tenant_id == current_user.tenant_id,
+            Debtor.is_deleted == False
+        )
+    )
+    result = await db.execute(stmt)
+    debtor = result.scalar_one_or_none()
+    
+    if not debtor:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Debtor not found"
+        )
+    
+    address_history = debtor.address_history or []
+    address_index = next((i for i, addr in enumerate(address_history) if addr.get('id') == address_id), None)
+    
+    if address_index is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Address not found"
+        )
+    
+    # If setting as current, mark all others as not current
+    if address_data.is_current:
+        for addr in address_history:
+            if addr.get('id') != address_id:
+                addr['is_current'] = False
+    
+    # Update address
+    update_data = address_data.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        if key == 'from_date' and value:
+            address_history[address_index]['from_date'] = value.isoformat()
+        elif key == 'to_date' and value:
+            address_history[address_index]['to_date'] = value.isoformat()
+        else:
+            address_history[address_index][key] = value
+    
+    address_history[address_index]['updated_at'] = datetime.now(timezone.utc).isoformat()
+    address_history[address_index]['updated_by'] = current_user.id
+    
+    debtor.address_history = address_history
+    await db.commit()
+    await db.refresh(debtor)
+    
+    return debtor
+
+
+@router.delete("/debtors/{debtor_id}/addresses/{address_id}", response_model=DebtorResponse)
+async def delete_debtor_address(
+    debtor_id: str,
+    address_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Remove an address from debtor's address history"""
+    await check_permission(current_user, "enforcesense:update_case")
+    
+    stmt = select(Debtor).where(
+        and_(
+            Debtor.id == debtor_id,
+            Debtor.tenant_id == current_user.tenant_id,
+            Debtor.is_deleted == False
+        )
+    )
+    result = await db.execute(stmt)
+    debtor = result.scalar_one_or_none()
+    
+    if not debtor:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Debtor not found"
+        )
+    
+    address_history = debtor.address_history or []
+    address_history = [addr for addr in address_history if addr.get('id') != address_id]
+    
+    debtor.address_history = address_history
+    await db.commit()
+    await db.refresh(debtor)
+    
+    return debtor
+
+
+# ============================================================================
+# Debtor Vulnerability Management
+# ============================================================================
+
+class VulnerabilityUpdate(BaseModel):
+    is_vulnerable: bool = Field(..., description="Whether the debtor is vulnerable")
+    vulnerability_notes: Optional[str] = Field(None, max_length=2000, description="Notes about vulnerability")
+
+
+@router.put("/debtors/{debtor_id}/vulnerability", response_model=DebtorResponse)
+async def update_debtor_vulnerability(
+    debtor_id: str,
+    vulnerability_data: VulnerabilityUpdate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update debtor vulnerability indicators"""
+    await check_permission(current_user, "enforcesense:update_case")
+    
+    stmt = select(Debtor).where(
+        and_(
+            Debtor.id == debtor_id,
+            Debtor.tenant_id == current_user.tenant_id,
+            Debtor.is_deleted == False
+        )
+    )
+    result = await db.execute(stmt)
+    debtor = result.scalar_one_or_none()
+    
+    if not debtor:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Debtor not found"
+        )
+    
+    debtor.is_vulnerable = vulnerability_data.is_vulnerable
+    debtor.vulnerability_notes = vulnerability_data.vulnerability_notes
+    
+    await db.commit()
+    await db.refresh(debtor)
+    
+    return debtor
+
 
 # ============================================================================
 # Case Status History
