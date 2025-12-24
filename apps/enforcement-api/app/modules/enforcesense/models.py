@@ -1106,7 +1106,7 @@ class DebtorAuditLog(Base):
     
     # Additional context
     action_type = Column(String(50), nullable=False, default="view")  # view, edit, export, etc.
-    metadata = Column(JSON, default=dict)  # Additional context
+    action_metadata = Column(JSON, default=dict)  # Additional context (renamed from 'metadata' - SQLAlchemy reserved word)
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), nullable=False, default=func.now())
