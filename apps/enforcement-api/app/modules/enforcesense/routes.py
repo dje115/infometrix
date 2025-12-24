@@ -632,6 +632,9 @@ async def list_cases(
     if status:
         stmt = stmt.where(EnforcementCase.status == status)
     
+    if case_type:
+        stmt = stmt.where(EnforcementCase.case_type == case_type)
+    
     if debtor_id:
         stmt = stmt.where(EnforcementCase.debtor_id == debtor_id)
     
@@ -675,8 +678,22 @@ async def list_cases(
     count_result = await db.execute(count_stmt)
     total_count = count_result.scalar() or 0
     
-    # Apply pagination to main query
-    stmt = stmt.order_by(EnforcementCase.created_at.desc()).offset(skip).limit(limit)
+    # Apply sorting
+    sort_column_map = {
+        "created_at": EnforcementCase.created_at,
+        "case_reference": EnforcementCase.case_reference,
+        "original_amount": EnforcementCase.original_amount,
+        "current_balance": EnforcementCase.current_balance,
+        "status": EnforcementCase.status
+    }
+    sort_column = sort_column_map.get(sort_by, EnforcementCase.created_at)
+    if sort_order == "asc":
+        stmt = stmt.order_by(sort_column.asc())
+    else:
+        stmt = stmt.order_by(sort_column.desc())
+    
+    # Apply pagination
+    stmt = stmt.offset(skip).limit(limit)
     
     result = await db.execute(stmt)
     cases = result.scalars().all()

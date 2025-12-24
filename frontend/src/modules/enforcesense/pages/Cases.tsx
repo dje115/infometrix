@@ -28,14 +28,17 @@ import {
   Grid,
   Card,
   CardContent,
-  Skeleton
+  Skeleton,
+  TableSortLabel
 } from '@mui/material';
 import {
   Add as AddIcon,
   Refresh as RefreshIcon,
   Search as SearchIcon,
   Visibility as ViewIcon,
-  Edit as EditIcon
+  Edit as EditIcon,
+  ArrowUpward as ArrowUpwardIcon,
+  ArrowDownward as ArrowDownwardIcon
 } from '@mui/icons-material';
 import TablePagination from '@mui/material/TablePagination';
 import { useNavigate } from 'react-router-dom';
@@ -67,6 +70,9 @@ const Cases: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterCaseType, setFilterCaseType] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<string>('created_at');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [searchQuery, setSearchQuery] = useState('');
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [page, setPage] = useState(0);
@@ -88,7 +94,7 @@ const Cases: React.FC = () => {
     loadCases();
     loadDebtors();
     loadClients();
-  }, [filterStatus, page, rowsPerPage]);
+  }, [filterStatus, filterCaseType, sortBy, sortOrder, page, rowsPerPage]);
 
   // Debounced search - reload cases when search query changes (after delay)
   useEffect(() => {
@@ -114,8 +120,15 @@ const Cases: React.FC = () => {
       if (filterStatus !== 'all') {
         params.status = filterStatus;
       }
+      if (filterCaseType !== 'all') {
+        params.case_type = filterCaseType;
+      }
       if (searchQuery) {
         params.search = searchQuery;
+      }
+      if (sortBy) {
+        params.sort_by = sortBy;
+        params.sort_order = sortOrder;
       }
       const response = await enforcesenseAPI.listCases(params);
       setCases(response.data || []);
