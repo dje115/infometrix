@@ -84,6 +84,21 @@ const DebtorDetail: React.FC = () => {
   const [editData, setEditData] = useState<any>({});
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [loadingAuditLogs, setLoadingAuditLogs] = useState(false);
+  const [addressDialogOpen, setAddressDialogOpen] = useState(false);
+  const [editingAddress, setEditingAddress] = useState<any | null>(null);
+  const [addressForm, setAddressForm] = useState({
+    address: '',
+    postcode: '',
+    is_current: false,
+    from_date: '',
+    to_date: '',
+    notes: ''
+  });
+  const [vulnerabilityDialogOpen, setVulnerabilityDialogOpen] = useState(false);
+  const [vulnerabilityForm, setVulnerabilityForm] = useState({
+    is_vulnerable: false,
+    vulnerability_notes: ''
+  });
 
   useEffect(() => {
     if (id) {
