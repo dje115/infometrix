@@ -587,11 +587,18 @@ async def list_cases(
     )
     
     if search:
-        stmt = stmt.join(Debtor).where(
+        # Join with Debtor and Client for comprehensive search
+        stmt = stmt.outerjoin(Debtor, EnforcementCase.debtor_id == Debtor.id)
+        stmt = stmt.outerjoin(EnforcementClient, EnforcementCase.client_id == EnforcementClient.id)
+        stmt = stmt.where(
             or_(
                 EnforcementCase.case_reference.ilike(f"%{search}%"),
                 EnforcementCase.client_reference.ilike(f"%{search}%"),
-                Debtor.legal_name.ilike(f"%{search}%")
+                Debtor.legal_name.ilike(f"%{search}%"),
+                Debtor.first_name.ilike(f"%{search}%"),
+                Debtor.last_name.ilike(f"%{search}%"),
+                Debtor.email.ilike(f"%{search}%"),
+                EnforcementClient.name.ilike(f"%{search}%")
             )
         )
     
@@ -695,15 +702,38 @@ async def create_case(
     # Generate case reference if not provided
     case_reference = case_data.case_reference
     if not case_reference:
-        case_reference = generate_case_reference(current_user.tenant_id, client)
-        # Ensure uniqueness
+        # Generate and ensure uniqueness (retry up to 5 times)
+        max_retries = 5
+        for attempt in range(max_retries):
+            case_reference = generate_case_reference(current_user.tenant_id, client)
+            existing_stmt = select(EnforcementCase).where(
+                and_(
+                    EnforcementCase.case_reference == case_reference,
+                    EnforcementCase.tenant_id == current_user.tenant_id
+                )
+            )
+            existing_result = await db.execute(existing_stmt)
+            if not existing_result.scalar_one_or_none():
+                break  # Unique reference found
+            if attempt == max_retries - 1:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to generate unique case reference after multiple attempts"
+                )
+    else:
+        # Validate provided case reference is unique within tenant
         existing_stmt = select(EnforcementCase).where(
-            EnforcementCase.case_reference == case_reference
+            and_(
+                EnforcementCase.case_reference == case_reference,
+                EnforcementCase.tenant_id == current_user.tenant_id
+            )
         )
         existing_result = await db.execute(existing_stmt)
         if existing_result.scalar_one_or_none():
-            # Retry with different unique ID
-            case_reference = generate_case_reference(current_user.tenant_id, client)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Case reference '{case_reference}' already exists"
+            )
     
     case = EnforcementCase(
         tenant_id=current_user.tenant_id,

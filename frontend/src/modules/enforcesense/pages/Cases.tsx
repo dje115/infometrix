@@ -89,6 +89,19 @@ const Cases: React.FC = () => {
     loadClients();
   }, [filterStatus, page, rowsPerPage]);
 
+  // Debounced search - reload cases when search query changes (after delay)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchQuery !== undefined) {
+        setPage(0); // Reset to first page when searching
+        loadCases();
+      }
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery]);
+
   const loadCases = async () => {
     try {
       setLoading(true);
@@ -235,17 +248,19 @@ const Cases: React.FC = () => {
           <Grid item xs={12} md={4}>
             <TextField
               fullWidth
-              placeholder="Search cases..."
+              placeholder="Search by case reference, client reference, or debtor name..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyPress={(e) => {
                 if (e.key === 'Enter') {
+                  setPage(0);
                   loadCases();
                 }
               }}
               InputProps={{
                 startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} />
               }}
+              helperText="Search by case reference, client reference, debtor name, or client name"
             />
           </Grid>
           <Grid item xs={12} md={3}>
@@ -254,7 +269,10 @@ const Cases: React.FC = () => {
               <Select
                 value={filterStatus}
                 label="Status"
-                onChange={(e) => setFilterStatus(e.target.value)}
+                onChange={(e) => {
+                  setFilterStatus(e.target.value);
+                  setPage(0); // Reset to first page when filtering
+                }}
               >
                 <MenuItem value="all">All Statuses</MenuItem>
                 <MenuItem value="draft">Draft</MenuItem>
@@ -265,6 +283,19 @@ const Cases: React.FC = () => {
                 <MenuItem value="cancelled">Cancelled</MenuItem>
               </Select>
             </FormControl>
+          </Grid>
+          <Grid item xs={12} md={2}>
+            <Button 
+              variant="outlined" 
+              fullWidth 
+              onClick={() => {
+                setPage(0);
+                loadCases();
+              }}
+              startIcon={<SearchIcon />}
+            >
+              Search
+            </Button>
           </Grid>
         </Grid>
       </Paper>
