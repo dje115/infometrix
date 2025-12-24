@@ -280,6 +280,66 @@ const Cases: React.FC = () => {
     return type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
   };
 
+  const handleSelectAll = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.checked) {
+      setSelectedCases(cases.map(c => c.id));
+    } else {
+      setSelectedCases([]);
+    }
+  };
+
+  const handleSelectCase = (caseId: string) => {
+    setSelectedCases(prev => 
+      prev.includes(caseId) 
+        ? prev.filter(id => id !== caseId)
+        : [...prev, caseId]
+    );
+  };
+
+  const handleBulkAction = (event: React.MouseEvent<HTMLElement>) => {
+    setBulkActionMenuAnchor(event.currentTarget);
+  };
+
+  const handleBulkStatusUpdate = async () => {
+    if (selectedCases.length === 0) return;
+    
+    try {
+      setError(null);
+      await enforcesenseAPI.bulkUpdateCaseStatus({
+        case_ids: selectedCases,
+        action: 'update_status',
+        status: bulkStatus
+      });
+      setBulkStatusDialogOpen(false);
+      setSelectedCases([]);
+      loadCases();
+    } catch (err: any) {
+      console.error('Failed to bulk update status:', err);
+      const errorMessage = err.response?.data?.detail || err.message || 'Failed to update status';
+      setError(errorMessage);
+    }
+  };
+
+  const handleBulkAssign = async () => {
+    if (selectedCases.length === 0) return;
+    
+    try {
+      setError(null);
+      await enforcesenseAPI.bulkAssignCases({
+        case_ids: selectedCases,
+        action: 'assign',
+        assigned_agent: bulkAssignedAgent || null
+      });
+      setBulkAssignDialogOpen(false);
+      setSelectedCases([]);
+      loadCases();
+    } catch (err: any) {
+      console.error('Failed to bulk assign:', err);
+      const errorMessage = err.response?.data?.detail || err.message || 'Failed to assign cases';
+      setError(errorMessage);
+    }
+  };
+
   return (
     <Container maxWidth="xl" sx={{ py: 3 }}>
       <Box mb={3} display="flex" justifyContent="space-between" alignItems="center">
@@ -430,7 +490,17 @@ const Cases: React.FC = () => {
                 </TableRow>
               ) : (
                 cases.map((caseItem) => (
-                  <TableRow key={caseItem.id} hover>
+                  <TableRow 
+                    key={caseItem.id} 
+                    hover
+                    selected={selectedCases.includes(caseItem.id)}
+                  >
+                    <TableCell padding="checkbox">
+                      <Checkbox
+                        checked={selectedCases.includes(caseItem.id)}
+                        onChange={() => handleSelectCase(caseItem.id)}
+                      />
+                    </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontWeight="bold">
                         {caseItem.case_reference}
