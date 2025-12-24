@@ -69,6 +69,8 @@ interface Case {
   legal_basis?: string;
   court_reference?: string;
   notes?: string;
+  assigned_agent?: string;
+  assigned_agent_name?: string;
   communications: any[];
   visits: any[];
   actions: any[];

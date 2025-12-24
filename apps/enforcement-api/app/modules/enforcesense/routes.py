@@ -214,6 +214,7 @@ class CaseResponse(BaseModel):
     current_balance: float
     enforcement_stage: Optional[str]
     assigned_agent: Optional[str]
+    assigned_agent_name: Optional[str] = None
     notes: Optional[str]
     communications: List[Dict[str, Any]]
     visits: List[Dict[str, Any]]
