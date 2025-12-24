@@ -14,7 +14,7 @@ CRITICAL FINANCIAL RULES:
 - See: docs/enforcesense/DEVELOPMENT_RULES.md for development rules
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Response, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func
 from typing import List, Optional, Dict, Any
@@ -30,7 +30,7 @@ from app.modules.enforcesense.models import (
     DebtorEntityType, CaseStatus, CaseType, TransactionType,
     LedgerEntry, LedgerEntryType, LedgerEntryStatus,
     PaymentAllocation, PaymentAllocationMethod,
-    Arrangement, ArrangementStatus
+    Arrangement, ArrangementStatus, DebtorAuditLog
 )
 from app.services.case_transaction_service import CaseTransactionService
 from app.services.payment_processing_service import PaymentProcessingService
@@ -283,9 +283,10 @@ async def list_debtors(
 async def get_debtor(
     debtor_id: str,
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    request: Request = None
 ):
-    """Get a single debtor"""
+    """Get a single debtor and log the access"""
     await check_permission(current_user, "enforcesense:view")
     
     stmt = select(Debtor).where(
@@ -303,6 +304,31 @@ async def get_debtor(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Debtor not found"
         )
+    
+    # Log the access for audit trail
+    try:
+        client_ip = request.client.host if request and request.client else None
+        user_agent = request.headers.get("user-agent") if request else None
+        
+        audit_log = DebtorAuditLog(
+            id=str(uuid.uuid4()),
+            tenant_id=current_user.tenant_id,
+            debtor_id=debtor_id,
+            user_id=current_user.id,
+            user_email=current_user.email,
+            user_name=getattr(current_user, 'full_name', None) or current_user.email,
+            accessed_at=datetime.now(timezone.utc),
+            ip_address=client_ip,
+            user_agent=user_agent[:500] if user_agent else None,  # Truncate if too long
+            action_type="view",
+            metadata={}
+        )
+        db.add(audit_log)
+        await db.commit()
+    except Exception as e:
+        # Don't fail the request if audit logging fails
+        print(f"Failed to log debtor access: {e}")
+        await db.rollback()
     
     return debtor
 

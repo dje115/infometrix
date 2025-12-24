@@ -1079,3 +1079,43 @@ class FeeChallenge(Base):
     
     def __repr__(self):
         return f"<FeeChallenge {self.id[:8]}... - {self.status.value}>"
+
+
+class DebtorAuditLog(Base):
+    """
+    Audit log for debtor record access
+    
+    Tracks who views/accesses debtor records and when.
+    This provides an audit trail for compliance and security.
+    """
+    __tablename__ = "debtor_audit_logs"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = Column(String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    debtor_id = Column(String(36), ForeignKey("debtors.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # User who accessed the record
+    user_id = Column(String(36), nullable=False, index=True)  # Platform API user ID
+    user_email = Column(String(255), nullable=True)  # Cached for historical reference
+    user_name = Column(String(255), nullable=True)  # Cached for historical reference
+    
+    # Access details
+    accessed_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), index=True)
+    ip_address = Column(String(45), nullable=True)  # IPv4 or IPv6
+    user_agent = Column(String(500), nullable=True)  # Browser/client info
+    
+    # Additional context
+    action_type = Column(String(50), nullable=False, default="view")  # view, edit, export, etc.
+    metadata = Column(JSON, default=dict)  # Additional context
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), nullable=False, default=func.now())
+    
+    # Index for efficient queries
+    __table_args__ = (
+        Index('idx_debtor_audit_debtor_accessed', 'debtor_id', 'accessed_at'),
+        Index('idx_debtor_audit_user_accessed', 'user_id', 'accessed_at'),
+    )
+    
+    def __repr__(self):
+        return f"<DebtorAuditLog debtor_id={self.debtor_id} user_id={self.user_id} accessed_at={self.accessed_at}>"

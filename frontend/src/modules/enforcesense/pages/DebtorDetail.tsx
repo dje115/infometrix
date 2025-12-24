@@ -82,6 +82,8 @@ const DebtorDetail: React.FC = () => {
   const [tabValue, setTabValue] = useState(0);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editData, setEditData] = useState<any>({});
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [loadingAuditLogs, setLoadingAuditLogs] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -89,6 +91,25 @@ const DebtorDetail: React.FC = () => {
       loadCases();
     }
   }, [id]);
+
+  useEffect(() => {
+    if (id && tabValue === 3) {
+      loadAuditLogs();
+    }
+  }, [id, tabValue]);
+
+  const loadAuditLogs = async () => {
+    if (!id) return;
+    try {
+      setLoadingAuditLogs(true);
+      const response = await enforcesenseAPI.getDebtorAuditLogs(id);
+      setAuditLogs(response.data || []);
+    } catch (err: any) {
+      console.error('Failed to load audit logs:', err);
+    } finally {
+      setLoadingAuditLogs(false);
+    }
+  };
 
   const loadDebtor = async () => {
     try {
@@ -211,6 +232,7 @@ const DebtorDetail: React.FC = () => {
           <Tab icon={<InfoIcon />} iconPosition="start" label="Information" />
           <Tab icon={<FolderIcon />} iconPosition="start" label={`Cases (${cases.length})`} />
           <Tab icon={<LocationIcon />} iconPosition="start" label="Address History" />
+          <Tab icon={<InfoIcon />} iconPosition="start" label="Audit Trail" />
         </Tabs>
       </Paper>
 
