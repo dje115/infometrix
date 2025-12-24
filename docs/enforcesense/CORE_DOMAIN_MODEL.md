@@ -91,12 +91,31 @@ Debtor-level data represents identity and shared context across all cases.
 
 A Client represents the instructing organisation.
 
+### ⚠️ CRITICAL: Client Architecture
+
+**Clients are managed in the main CRM, not in EnforceSense.**
+
+- **EnforcementClient links to CRM Customer** via `customer_id` foreign key
+- **Client data (name, contacts, sales)** is managed in main CRM (`customers` table)
+- **EnforcementClient contains enforcement-specific settings only**:
+  - `reference_prefix` - For case reference generation
+  - `default_case_type` - Default enforcement case type
+  - `settings` - Enforcement-specific configuration
+- **EnforceSense "Clients" section** provides enforcement-specific features:
+  - Data imports from clients
+  - Client reporting
+  - Portal configuration
+  - Enforcement commercial terms
+
+See [`docs/enforcesense/MODULE_ARCHITECTURE.md`](MODULE_ARCHITECTURE.md) for complete architecture details.
+
 ### Rules
 
 - Clients MAY have many Cases
 - Clients MAY have many Debtors
 - Clients MUST NOT own debtor identity
 - Clients are tenant-scoped
+- **EnforcementClient MUST link to CRM Customer** (when available)
 
 ---
 

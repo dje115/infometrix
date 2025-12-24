@@ -270,11 +270,14 @@ class EnforcementClient(Base):
     is_deleted = Column(Boolean, default=False, nullable=False)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     
+    # CRM Integration - Link to main CRM Customer
+    # CRITICAL: Clients are managed in main CRM. This links EnforcementClient to Customer.
+    # EnforcementClient contains enforcement-specific settings only.
+    # Client data (name, contacts, sales) is managed in main CRM.
+    customer_id = Column(String(36), ForeignKey("customers.id", ondelete="SET NULL"), nullable=True, index=True)
+    
     # Relationships
     cases = relationship("EnforcementCase", back_populates="client", cascade="all, delete-orphan")
-    
-    # TODO: Add customer_id FK to link to CRM Customer/Account
-    # customer_id = Column(String(36), ForeignKey("customers.id"), nullable=True, index=True)
     
     def __repr__(self):
         return f"<EnforcementClient {self.name}>"

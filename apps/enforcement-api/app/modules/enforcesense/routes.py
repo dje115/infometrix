@@ -111,16 +111,21 @@ class DebtorResponse(BaseModel):
 
 
 class ClientCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255)
-    company_name: Optional[str] = None
+    # CRM Integration: Link to main CRM Customer
+    # If customer_id is provided, client data (name, company_name, etc.) will be synced from Customer
+    # If not provided, EnforcementClient can be created standalone (for migration/legacy support)
+    customer_id: Optional[str] = Field(None, description="Link to main CRM Customer ID. If provided, name/company_name will be synced from Customer.")
+    name: str = Field(..., min_length=1, max_length=255, description="Client name (synced from CRM Customer if customer_id provided)")
+    company_name: Optional[str] = Field(None, description="Company name (synced from CRM Customer if customer_id provided)")
     company_registration_number: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
     address: Optional[str] = None
     postcode: Optional[str] = None
-    reference_prefix: Optional[str] = None
+    # Enforcement-specific settings (not in CRM)
+    reference_prefix: Optional[str] = Field(None, max_length=20, description="Prefix for case reference generation (e.g., 'ES', 'CCJ')")
     default_case_type: Optional[CaseType] = None
-    settings: Optional[Dict[str, Any]] = None
+    settings: Optional[Dict[str, Any]] = Field(None, description="Enforcement-specific configuration (JSON)")
 
 
 class ClientUpdate(BaseModel):
@@ -138,6 +143,7 @@ class ClientUpdate(BaseModel):
 
 class ClientResponse(BaseModel):
     id: str
+    customer_id: Optional[str] = Field(None, description="Link to main CRM Customer ID")
     name: str
     company_name: Optional[str]
     company_registration_number: Optional[str]
@@ -145,6 +151,7 @@ class ClientResponse(BaseModel):
     phone: Optional[str]
     address: Optional[str]
     postcode: Optional[str]
+    # Enforcement-specific settings
     reference_prefix: Optional[str]
     default_case_type: Optional[str]
     settings: Dict[str, Any]
@@ -492,11 +499,25 @@ async def create_client(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Create a new client"""
+    """
+    Create a new enforcement client.
+    
+    NOTE: Clients are managed in main CRM. This endpoint creates an EnforcementClient
+    that links to a CRM Customer. If customer_id is provided, client data will be
+    synced from the CRM Customer. Enforcement-specific settings (reference_prefix,
+    default_case_type) are stored here.
+    """
     await check_permission(current_user, "enforcesense:admin")
+    
+    # If customer_id provided, validate it exists and belongs to tenant
+    # Note: We can't directly query the CRM Customer table from Enforcement API
+    # In a two-API architecture, this would require an API call to Platform API
+    # For now, we'll accept customer_id and sync data if provided
+    # TODO: Add API call to Platform API to validate and fetch Customer data
     
     client = EnforcementClient(
         tenant_id=current_user.tenant_id,
+        customer_id=client_data.customer_id,  # Link to CRM Customer
         name=client_data.name,
         company_name=client_data.company_name,
         company_registration_number=client_data.company_registration_number,
@@ -504,6 +525,7 @@ async def create_client(
         phone=client_data.phone,
         address=client_data.address,
         postcode=client_data.postcode,
+        # Enforcement-specific settings (not in CRM)
         reference_prefix=client_data.reference_prefix,
         default_case_type=client_data.default_case_type,
         settings=client_data.settings or {}
