@@ -402,6 +402,13 @@ const Cases: React.FC = () => {
           <Table>
             <TableHead>
               <TableRow>
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    indeterminate={selectedCases.length > 0 && selectedCases.length < cases.length}
+                    checked={cases.length > 0 && selectedCases.length === cases.length}
+                    onChange={handleSelectAll}
+                  />
+                </TableCell>
                 <TableCell>Case Reference</TableCell>
                 <TableCell>Debtor</TableCell>
                 <TableCell>Client</TableCell>
