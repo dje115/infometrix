@@ -129,6 +129,10 @@ class ClientCreate(BaseModel):
 
 
 class ClientUpdate(BaseModel):
+    # Note: customer_id should not be updated via this endpoint
+    # To link/unlink from CRM Customer, use a dedicated endpoint
+    customer_id: Optional[str] = Field(None, description="Link to main CRM Customer ID (use dedicated endpoint to change)")
+    # Client data fields (typically synced from CRM, but can be overridden here)
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     company_name: Optional[str] = None
     company_registration_number: Optional[str] = None
@@ -136,7 +140,8 @@ class ClientUpdate(BaseModel):
     phone: Optional[str] = None
     address: Optional[str] = None
     postcode: Optional[str] = None
-    reference_prefix: Optional[str] = None
+    # Enforcement-specific settings (can be updated here)
+    reference_prefix: Optional[str] = Field(None, max_length=20)
     default_case_type: Optional[CaseType] = None
     settings: Optional[Dict[str, Any]] = None
 
