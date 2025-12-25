@@ -54,11 +54,17 @@ const Login: React.FC = () => {
     setLoading(true);
 
     try {
+      if (!tenantSlug) {
+        setError('Tenant slug is required');
+        setLoading(false);
+        return;
+      }
+      
       if (loginMethod === 'passwordless') {
-        await authAPI.requestPasswordlessLogin(email);
+        await authAPI.requestPasswordlessLogin(email, tenantSlug);
         setPasswordlessSent(true);
       } else {
-        const response = await authAPI.login(email, password);
+        const response = await authAPI.login(email, password, tenantSlug);
         
         // Check if 2FA is required
         if (response.data.requires_2fa) {
