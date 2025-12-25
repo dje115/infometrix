@@ -20,7 +20,7 @@ const Login: React.FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [version, setVersion] = useState<string>('3.0.2');
+  const [version, setVersion] = useState<string>('3.7.0');
   const [loginMethod, setLoginMethod] = useState<'password' | 'passwordless'>('password');
   const [passwordlessSent, setPasswordlessSent] = useState(false);
   const [requires2FA, setRequires2FA] = useState(false);

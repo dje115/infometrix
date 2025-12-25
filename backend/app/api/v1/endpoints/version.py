@@ -73,9 +73,9 @@ async def get_version_info():
         fresh_settings = get_settings.__wrapped__()  # Get fresh instance
         version = fresh_settings.VERSION
     
-    # Ensure we have a version
-    if not version or version == "3.0.3" or version == "3.1.0" or version == "3.2.0" or version == "3.3.0" or version == "3.4.0" or version == "3.5.0":
-        version = "3.6.0"
+    # Ensure we have a version - use settings.VERSION as final fallback
+    if not version:
+        version = settings.VERSION
     
     return VersionResponse(
         version=version,
