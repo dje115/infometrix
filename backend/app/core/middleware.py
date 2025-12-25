@@ -36,14 +36,22 @@ class TenantMiddleware(BaseHTTPMiddleware):
     """
     
     async def dispatch(self, request: Request, call_next):
-        # Only set tenant for public routes (auth endpoints, version, health)
-        # For authenticated routes, tenant will be validated from JWT in dependencies
-        is_public_route = (
-            request.url.path.startswith("/api/v1/auth/") or
+        # Skip tenant processing entirely for endpoints that don't need tenant context
+        # Version, health, and root endpoints don't need tenant validation
+        skip_tenant_routes = (
             request.url.path.startswith("/api/v1/version") or
             request.url.path.startswith("/health") or
             request.url.path == "/"
         )
+        
+        if skip_tenant_routes:
+            # These endpoints don't need tenant context at all
+            response = await call_next(request)
+            return response
+        
+        # Only set tenant for public routes (auth endpoints)
+        # For authenticated routes, tenant will be validated from JWT in dependencies
+        is_public_route = request.url.path.startswith("/api/v1/auth/")
         
         tenant_id = None
         
