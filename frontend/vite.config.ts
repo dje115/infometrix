@@ -22,6 +22,18 @@ export default defineConfig({
             proxyReq.removeHeader('host');
           });
         }
+      },
+      '/enforcesense': {
+        target: 'http://enforcement-api:8001',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/enforcesense/, '/enforcesense'),
+        configure: (proxy, options) => {
+          proxy.on('proxyReq', (proxyReq, req, res) => {
+            // Remove the host header to avoid validation issues
+            proxyReq.removeHeader('host');
+          });
+        }
       }
     }
   },

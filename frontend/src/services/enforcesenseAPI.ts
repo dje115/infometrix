@@ -2,7 +2,9 @@ import axios from 'axios';
 
 // Enforcement API client (separate from Platform API)
 // Enforcement API runs on port 8001 and doesn't use /api/v1 prefix
-const ENFORCEMENT_API_BASE_URL = import.meta.env.VITE_ENFORCEMENT_API_URL || 'http://localhost:8001';
+// In development with Vite proxy, use relative path to leverage proxy
+// In production or when VITE_ENFORCEMENT_API_URL is set, use the explicit URL
+const ENFORCEMENT_API_BASE_URL = import.meta.env.VITE_ENFORCEMENT_API_URL || (import.meta.env.DEV ? '/enforcesense' : 'http://localhost:8001');
 
 const enforcementApiClient = axios.create({
   baseURL: ENFORCEMENT_API_BASE_URL,
