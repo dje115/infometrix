@@ -19,6 +19,7 @@ from app.models.leads import Lead, LeadStatus
 from app.models.quotes import Quote, QuoteStatus
 from app.models.opportunities import Opportunity, OpportunityStage
 from app.models.helpdesk import Ticket, TicketStatus
+from sqlalchemy.exc import DBAPIError
 from app.models.sla_compliance import SLAComplianceRecord, SLABreachAlert
 from app.services.ai_analysis_service import AIAnalysisService
 from app.core.api_keys import get_api_keys
@@ -227,11 +228,12 @@ async def get_dashboard(
         opportunities_total_value = 0.0
         
         try:
+            # Use enum values instead of strings to avoid type conversion errors
             active_opp_result = await db.execute(select(func.count(Opportunity.id)).where(
                 and_(
                     Opportunity.tenant_id == tenant_id,
                     Opportunity.is_deleted == False,
-                    ~Opportunity.stage.in_(["closed_won", "closed_lost"])
+                    ~Opportunity.stage.in_([OpportunityStage.CLOSED_WON, OpportunityStage.CLOSED_LOST])
                 )
             ))
             active_opportunities = active_opp_result.scalar() or 0
@@ -239,7 +241,7 @@ async def get_dashboard(
             qualified_result = await db.execute(select(func.count(Opportunity.id)).where(
                 and_(
                     Opportunity.tenant_id == tenant_id,
-                    Opportunity.stage == "qualified",
+                    Opportunity.stage == OpportunityStage.QUALIFIED,
                     Opportunity.is_deleted == False
                 )
             ))
@@ -248,7 +250,7 @@ async def get_dashboard(
             proposal_result = await db.execute(select(func.count(Opportunity.id)).where(
                 and_(
                     Opportunity.tenant_id == tenant_id,
-                    Opportunity.stage == "proposal_sent",
+                    Opportunity.stage == OpportunityStage.PROPOSAL_SENT,
                     Opportunity.is_deleted == False
                 )
             ))
@@ -257,7 +259,7 @@ async def get_dashboard(
             closed_won_result = await db.execute(select(func.count(Opportunity.id)).where(
                 and_(
                     Opportunity.tenant_id == tenant_id,
-                    Opportunity.stage == "closed_won",
+                    Opportunity.stage == OpportunityStage.CLOSED_WON,
                     Opportunity.is_deleted == False
                 )
             ))
