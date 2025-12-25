@@ -63,24 +63,34 @@ async def get_version_info():
     2. VERSION file in project root (single source of truth)
     3. settings.VERSION from config.py (fallback)
     """
-    # Priority: APP_VERSION env var > VERSION file > settings.VERSION
-    version = os.getenv('APP_VERSION')
-    if not version:
-        version = _read_version_file()
-    if not version:
-        # Use settings.VERSION as fallback (cleared cache to ensure fresh value)
-        from app.core.config import get_settings
-        fresh_settings = get_settings.__wrapped__()  # Get fresh instance
-        version = fresh_settings.VERSION
-    
-    # Ensure we have a version - use settings.VERSION as final fallback
-    if not version:
-        version = settings.VERSION
-    
-    return VersionResponse(
-        version=version,
-        build_date=os.getenv('BUILD_DATE', ''),
-        build_hash=os.getenv('BUILD_HASH', ''),
-        environment=os.getenv('ENVIRONMENT', settings.ENVIRONMENT)
-    )
+    try:
+        # Priority: APP_VERSION env var > VERSION file > settings.VERSION
+        version = os.getenv('APP_VERSION')
+        if not version:
+            version = _read_version_file()
+        if not version:
+            # Use settings.VERSION as fallback
+            version = settings.VERSION
+        
+        # Ensure we have a version
+        if not version:
+            version = "3.7.0"  # Ultimate fallback
+        
+        return VersionResponse(
+            version=version,
+            build_date=os.getenv('BUILD_DATE', ''),
+            build_hash=os.getenv('BUILD_HASH', ''),
+            environment=os.getenv('ENVIRONMENT', settings.ENVIRONMENT)
+        )
+    except Exception as e:
+        # If anything goes wrong, return a safe default
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting version info: {e}", exc_info=True)
+        return VersionResponse(
+            version=settings.VERSION or "3.7.0",
+            build_date=os.getenv('BUILD_DATE', ''),
+            build_hash=os.getenv('BUILD_HASH', ''),
+            environment=os.getenv('ENVIRONMENT', settings.ENVIRONMENT)
+        )
 
