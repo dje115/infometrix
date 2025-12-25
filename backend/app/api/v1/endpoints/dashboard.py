@@ -679,10 +679,15 @@ async def get_dashboard(
             top_leads=top_leads
         )
         
-    except Exception as e:
+    except (Exception, DBAPIError) as e:
         print(f"[ERROR] Dashboard error: {e}")
         import traceback
         print(traceback.format_exc())
+        # Rollback any failed transaction
+        try:
+            await db.rollback()
+        except:
+            pass
         raise HTTPException(status_code=500, detail=str(e))
 
 
