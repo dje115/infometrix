@@ -114,9 +114,17 @@ class TenantMiddleware(BaseHTTPMiddleware):
                         else:
                             # Tenant doesn't exist
                             if settings.ENVIRONMENT == "development":
-                                # Development: allow default tenant
-                                logger.warning(f"Tenant '{provided_tenant}' not found, using default 'ccs'")
-                                tenant_id = "ccs"
+                                # Development: try to find default 'ccs' tenant by slug
+                                logger.warning(f"Tenant '{provided_tenant}' not found, trying default 'ccs' tenant")
+                                default_stmt = select(Tenant).where(Tenant.slug == "ccs")
+                                default_result = await session.execute(default_stmt)
+                                default_tenant = default_result.scalar_one_or_none()
+                                if default_tenant:
+                                    tenant_id = default_tenant.id
+                                    _tenant_cache["ccs"] = tenant_id
+                                else:
+                                    # If ccs tenant doesn't exist, just use the slug as fallback
+                                    tenant_id = "ccs"
                             else:
                                 # Production: reject unknown tenants
                                 logger.warning(f"Unknown tenant '{provided_tenant}' attempted access")
@@ -129,7 +137,18 @@ class TenantMiddleware(BaseHTTPMiddleware):
                     except Exception as e:
                         logger.error(f"Error validating tenant: {e}", exc_info=True)
                         if settings.ENVIRONMENT == "development":
-                            tenant_id = "ccs"  # Fallback for development
+                            # Try to get default ccs tenant ID as fallback
+                            try:
+                                default_stmt = select(Tenant).where(Tenant.slug == "ccs")
+                                default_result = await session.execute(default_stmt)
+                                default_tenant = default_result.scalar_one_or_none()
+                                if default_tenant:
+                                    tenant_id = default_tenant.id
+                                    _tenant_cache["ccs"] = tenant_id
+                                else:
+                                    tenant_id = "ccs"  # Ultimate fallback
+                            except:
+                                tenant_id = "ccs"  # Ultimate fallback
                         else:
                             raise HTTPException(
                                 status_code=500,
