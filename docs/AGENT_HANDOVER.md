@@ -1,8 +1,8 @@
 # 🤖 AI Agent Handover Document - Infometrix Platform
 
-**Last Updated:** 2025-12-17  
-**Platform Version:** 3.0.6  
-**Status:** Active Development - Module System Migration
+**Last Updated:** 2025-12-25  
+**Platform Version:** 3.7.0  
+**Status:** Active Development - Multi-Tenant Authentication & EnforceSense Module
 
 ---
 
@@ -23,6 +23,7 @@ Infometrix is a **multi-tenant SaaS CRM and Quoting Platform** that has been reb
 3. **Feature Flags:** Tenant-level control over module visibility
 4. **RBAC:** Role-based access control for users
 5. **AI-Powered:** GPT-5 integration for lead analysis, company intelligence
+6. **Explicit Tenant Identification:** No default tenant fallback - all environments require explicit tenant identifier
 
 ---
 
@@ -32,18 +33,20 @@ Infometrix is a **multi-tenant SaaS CRM and Quoting Platform** that has been reb
 Infometrix/
 ├── backend/              # FastAPI Python backend
 │   ├── app/
-│   │   ├── modules/     # Module system (NEW)
+│   │   ├── modules/     # Module system
 │   │   │   ├── helpdesk/
 │   │   │   ├── enforcesense/
 │   │   │   ├── base.py
 │   │   │   └── registry.py
 │   │   ├── api/v1/      # API endpoints
 │   │   ├── models/      # SQLAlchemy models
-│   │   └── core/        # Core services (feature flags, etc.)
+│   │   └── core/        # Core services (feature flags, middleware, etc.)
 │   └── migrations/     # Database migrations
 │
 ├── frontend/            # React frontend (CRM interface)
 ├── admin-portal/        # Vue.js admin interface
+├── apps/
+│   └── enforcement-api/ # EnforceSense API (separate service)
 ├── docs/                # Documentation (THIS FOLDER)
 │   ├── specs/          # Specifications
 │   ├── ccs-archive/    # Legacy CCS documentation
@@ -54,101 +57,68 @@ Infometrix/
 
 ---
 
-## 🔄 **Current Migration Status**
+## 🔄 **Current Status (2025-12-25)**
 
-### ✅ **Completed:**
-- Repository rebranded from `ccs-quote-tool-v2` to `infometrix`
-- Module system scaffolding created
-- Feature flags system implemented
-- Database migration for `feature_flags` column
-- Docker containers rebranded
-- Package.json files updated
-- **Database initialized with system tenant and default tenant**
-- **34 AI prompts seeded across all categories**
-- **All services running (Frontend, Admin, Backend, Celery, MailHog, MinIO)**
-- **Shared folder data migrated from CCS**
+### ✅ **Recently Completed:**
+- **Multi-Tenant Login Enhancement:** Added tenant slug field to login page
+- **Tenant Middleware Update:** Removed default tenant fallback - now requires explicit tenant identifier in all environments (dev and production)
+- **Version Management:** Fixed version endpoint to correctly read from VERSION file (3.7.0)
+- **EnforceSense Module:** Bulk operations, case status history, debtor address management, vulnerability indicators
+- **TypeScript Errors:** All resolved - no linter errors in frontend
 
-### 🚧 **In Progress:**
-- Frontend navigation grouped by modules
-- Helpdesk module migration
-- Module registry integration
+### 🚧 **Current Issues:**
+- **Docker Desktop:** Not currently running (needs to be started)
+- **Backend Status:** Unknown (requires Docker to check)
+- **Login Flow:** Now requires tenant slug - users must provide tenant identifier on login
 
 ### 📋 **Pending:**
-- EnforceSense module integration (separate repo)
-- Complete frontend navigation restructure
-- Module permission system refinement
+- Verify backend starts correctly after tenant middleware changes
+- Test login flow with tenant slug
+- Verify all services are running correctly
+- Complete EnforceSense module integration testing
 
 ---
 
-## 🗂️ **Key Documentation Locations**
+## 🔑 **Key Changes in v3.7.0**
 
-### **This Workspace (Infometrix):**
-- **`README.md`** - Main project README
-- **`docs/AGENT_HANDOVER.md`** - This document
-- **`AGENT_START.md`** - Quick start for new agents
-- **`MIGRATION_PLAN.md`** - Detailed migration plan
-- **`docs/specs/`** - Technical specifications
+### **1. Multi-Tenant Authentication Changes**
 
-### **Legacy CCS Project:**
-- **Location:** `C:\Users\david\Documents\CCS quote tool\CCS Quote Tool v2\`
-- **Key Docs:**
-  - `README.md` - Original project documentation
-  - `DEVELOPMENT_PLAN.md` - 6-month strategic plan
-  - `MASTER_SPECIFICATION.md` - Complete feature spec
-  - `HANDOVER_DOCUMENT.md` - Previous handover
-  - See `docs/ccs-archive/` for copied specs
+**CRITICAL:** The platform now **requires explicit tenant identification** in all environments. There is **no default tenant fallback**.
 
-### **EnforceSense Project:**
-- **Location:** `C:\Users\david\Documents\EnforceSense\`
-- **Key Docs:**
-  - `README.md` - EnforceSense overview
-  - `docs/AGENTS_START_HERE.md` - Agent guide
-  - `docs/CORE_DOMAIN_MODEL.md` - Domain model
-  - `docs/UK_DEBT_ENFORCEMENT_END_TO_END.md` - Business process
-  - See `docs/enforcesense/` for copied specs
+#### **Login Page Changes:**
+- Added "Tenant Slug" input field (required)
+- Users must provide: **Username, Tenant Slug, and Password**
+- Tenant slug is sent as `X-Tenant-ID` header in login requests
+- Location: `frontend/src/pages/Login.tsx`
 
----
+#### **Backend Middleware Changes:**
+- Removed default "ccs" tenant fallback in development
+- All routes (except `/api/v1/version`, `/health`, `/`) now require tenant identifier
+- Tenant can be provided via:
+  - `X-Tenant-ID` header (preferred for API calls)
+  - Subdomain (e.g., `ccs.localhost:3000`)
+- Location: `backend/app/core/middleware.py`
 
-## 🏗️ **Module System Architecture**
+#### **Why This Change?**
+- User requirement: "i dont want it defaulting to anything as i will setup multi tenants in dev as in production"
+- Ensures dev environment matches production behavior
+- Prevents accidental cross-tenant data access
+- Forces explicit tenant setup
 
-### **Module Structure:**
-```python
-# backend/app/modules/base.py
-class BaseModule:
-    name: str
-    description: str
-    icon: str
-    category: str  # "Sales/CRM", "Helpdesk", "Quoting & Proposals", etc.
-    route_prefix: str
-    permissions: List[str]
-    
-    def register_routes(self, router)
-    def get_navigation_items(self) -> List[Dict]
-```
+### **2. Version Management**
 
-### **Module Registry:**
-```python
-# backend/app/modules/registry.py
-ModuleRegistry.register_module(HelpdeskModule())
-ModuleRegistry.register_module(EnforceSenseModule())
-```
+- Version is now correctly read from `VERSION` file in project root
+- Fallback chain: `APP_VERSION` env var → `VERSION` file → `settings.VERSION` → `"3.7.0"`
+- Location: `backend/app/api/v1/endpoints/version.py`
 
-### **Feature Flags:**
-```python
-# backend/app/core/feature_flags.py
-FeatureFlagsService.is_enabled(tenant_id, "HELPDESK_ENABLED")
-```
+### **3. EnforceSense Module Enhancements**
 
-### **Database:**
-```sql
--- tenants table has feature_flags JSONB column
-feature_flags = {
-  "HELPDESK_ENABLED": true,
-  "ENFORCESENSE_ENABLED": false,
-  "QUOTING_ENABLED": true,
-  "SALES_ENABLED": true
-}
-```
+- Bulk operations for cases (status update, assignment)
+- Case status history tracking
+- Debtor address management (CRUD)
+- Debtor vulnerability indicators
+- Enhanced dashboard with charts
+- See EnforceSense TODO list for complete details
 
 ---
 
@@ -156,26 +126,30 @@ feature_flags = {
 
 ### **Starting the Platform:**
 ```powershell
-cd "C:\Users\david\Documents\Infometrix"
+cd "C:\devfolder\Infometrix"
+# Start Docker Desktop first!
 docker-compose up -d
 ```
 
 ### **Services:**
-- **Backend:** http://localhost:8000 (FastAPI) ✅ Running
-- **Frontend:** http://localhost:3000 (React CRM) ✅ Running
-- **Admin Portal:** http://localhost:3010 (Vue.js Admin) ✅ Running
-- **PostgreSQL:** localhost:5432 ✅ Running
-- **Redis:** localhost:6379 ✅ Running
-- **MinIO:** http://localhost:9002 (API), http://localhost:9092 (Console) ✅ Running
-- **MailHog:** http://localhost:3006 (Email testing) ✅ Running
-- **Celery Worker:** Background tasks ✅ Running
-- **Celery Beat:** Scheduled tasks ✅ Running
+- **Backend:** http://localhost:8000 (FastAPI) 
+- **Frontend:** http://localhost:3000 (React CRM) 
+- **Admin Portal:** http://localhost:3010 (Vue.js Admin) 
+- **Enforcement API:** http://localhost:8001 (EnforceSense API)
+- **PostgreSQL:** localhost:5432 
+- **Redis:** localhost:6379 
+- **MinIO:** http://localhost:9002 (API), http://localhost:9092 (Console) 
+- **MailHog:** http://localhost:3006 (Email testing) 
+- **Celery Worker:** Background tasks 
+- **Celery Beat:** Scheduled tasks 
 
-### **Default Credentials:**
-- Email: `admin@ccs.com`
-- Password: `admin123`
-- Role: Super Admin
-- Tenant: CCS (default)
+### **Login Credentials:**
+- **Email:** `admin@ccs.com` (or your tenant admin email)
+- **Password:** `admin123` (or your tenant admin password)
+- **Tenant Slug:** `ccs` (or your tenant slug - **REQUIRED**)
+- **Role:** Super Admin
+
+**IMPORTANT:** You must now provide the tenant slug on the login page. There is no default.
 
 ---
 
@@ -184,20 +158,26 @@ docker-compose up -d
 ### **1. Multi-Tenancy:**
 - Each tenant has isolated data
 - Row-level security (RLS) in PostgreSQL
-- Tenant context set via middleware
+- Tenant context set via middleware or JWT token
+- **NO DEFAULT TENANT** - explicit identification required
 
-### **2. Module System:**
+### **2. Tenant Identification:**
+- **For Public Routes (Login):** Via `X-Tenant-ID` header or subdomain
+- **For Authenticated Routes:** Via JWT token (tenant_id in token payload)
+- **Middleware Validation:** Tenant must exist in database before access is granted
+
+### **3. Module System:**
 - Modules are self-contained features
 - Registered via `ModuleRegistry`
 - Visibility controlled by feature flags
 - Navigation grouped by module category
 
-### **3. Feature Flags:**
+### **4. Feature Flags:**
 - Stored in `tenants.feature_flags` JSONB column
 - Tenant-specific enable/disable
 - Checked before module routes/UI are shown
 
-### **4. RBAC:**
+### **5. RBAC:**
 - User roles: SUPER_ADMIN, TENANT_ADMIN, MANAGER, SALES_REP, USER
 - Permissions stored as JSON array per user
 - Module-level permission checks
@@ -207,19 +187,29 @@ docker-compose up -d
 ## 📚 **Important Files to Understand**
 
 ### **Backend:**
-1. **`backend/app/modules/registry.py`** - Module registration
-2. **`backend/app/core/feature_flags.py`** - Feature flag service
-3. **`backend/app/models/tenant.py`** - Tenant model (has feature_flags)
-4. **`backend/app/api/v1/api.py`** - Main API router (registers modules)
-5. **`backend/main.py`** - FastAPI app entry point
+1. **`backend/app/core/middleware.py`** - Tenant middleware (requires explicit tenant)
+2. **`backend/app/modules/registry.py`** - Module registration
+3. **`backend/app/core/feature_flags.py`** - Feature flag service
+4. **`backend/app/models/tenant.py`** - Tenant model (has feature_flags)
+5. **`backend/app/api/v1/api.py`** - Main API router (registers modules)
+6. **`backend/app/core/dependencies.py`** - Authentication dependencies (get_current_user, get_current_tenant)
+7. **`backend/main.py`** - FastAPI app entry point
 
 ### **Frontend:**
-1. **`frontend/src/components/Layout.tsx`** - Main layout (needs module navigation)
-2. **`frontend/src/types/modules.ts`** - TypeScript module types
-3. **`frontend/src/App.tsx`** - Main app component
+1. **`frontend/src/pages/Login.tsx`** - Login page (now requires tenant slug)
+2. **`frontend/src/components/Layout.tsx`** - Main layout (module navigation)
+3. **`frontend/src/types/modules.ts`** - TypeScript module types
+4. **`frontend/src/services/api.ts`** - API service (includes tenant slug in login)
+5. **`frontend/src/App.tsx`** - Main app component
+
+### **EnforceSense:**
+1. **`apps/enforcement-api/app/modules/enforcesense/`** - EnforceSense module
+2. **`apps/enforcement-api/app/modules/enforcesense/routes.py`** - API endpoints
+3. **`apps/enforcement-api/app/modules/enforcesense/models.py`** - Database models
+4. **`frontend/src/modules/enforcesense/`** - Frontend components
 
 ### **Database:**
-1. **`backend/migrations/add_feature_flags.sql`** - Feature flags migration
+1. **`backend/migrations/`** - Database migrations
 2. **`backend/app/models/tenant.py`** - Tenant model schema
 
 ---
@@ -227,15 +217,18 @@ docker-compose up -d
 ## 🎯 **Current Tasks & Priorities**
 
 ### **High Priority:**
-1. ✅ Database migration applied
-2. 🚧 Frontend navigation grouped by modules
-3. 🚧 Helpdesk module fully migrated
-4. 📋 EnforceSense integration approach decided
+1. ✅ Multi-tenant login with tenant slug (completed)
+2. ✅ Remove default tenant fallback (completed)
+3. ✅ Fix version endpoint (completed)
+4. 🚧 Verify backend starts correctly
+5. 🚧 Test login flow with tenant slug
+6. 📋 Complete EnforceSense module testing
 
 ### **Medium Priority:**
 1. Module permission system refinement
 2. Frontend module visibility based on feature flags
 3. Module-specific route protection
+4. Performance optimizations
 
 ### **Low Priority:**
 1. Module documentation
@@ -247,13 +240,11 @@ docker-compose up -d
 ## 🔗 **Integration Points**
 
 ### **EnforceSense Integration:**
-- **Location:** `C:\Users\david\Documents\EnforceSense\`
-- **Status:** Separate repository, will be integrated as module
-- **Options:**
-  1. Git submodule
-  2. Git subtree
-  3. Vendor copy
-- **Target:** `modules/enforcesense/` or `backend/app/modules/enforcesense/`
+- **Location:** `apps/enforcement-api/` (separate service)
+- **Status:** Active development
+- **Port:** 8001
+- **Frontend:** `frontend/src/modules/enforcesense/`
+- **See:** EnforceSense TODO list for detailed status
 
 ### **Legacy CCS Features:**
 - Most features already migrated
@@ -264,11 +255,18 @@ docker-compose up -d
 
 ## 🐛 **Known Issues & Gotchas**
 
-1. ✅ **Frontend containers:** Fixed - using `--legacy-peer-deps` flag
-2. ✅ **Database:** Fully initialized with 2 tenants and 34 AI prompts
-3. **Module navigation:** Not yet implemented in frontend (pending)
-4. **EnforceSense:** Not yet integrated, placeholder module exists
-5. **Database name:** Still `ccs_quote_tool` for compatibility (intentional)
+1. **Docker Desktop:** Must be running before starting services
+2. **Tenant Slug Required:** Login will fail without tenant slug - no default fallback
+3. **Version Endpoint:** Now correctly reads from VERSION file (3.7.0)
+4. **Module navigation:** Implemented in frontend
+5. **EnforceSense:** Separate service on port 8001
+6. **Database name:** Still `ccs_quote_tool` for compatibility (intentional)
+
+### **Recent Fixes:**
+- ✅ TypeScript errors resolved
+- ✅ Version endpoint fixed
+- ✅ Tenant middleware updated
+- ✅ Login page updated with tenant slug field
 
 ---
 
@@ -279,8 +277,9 @@ docker-compose up -d
 3. **Migration Plan:** `MIGRATION_PLAN.md` (what we're doing)
 4. **Module System:** `backend/app/modules/base.py` (how modules work)
 5. **Feature Flags:** `backend/app/core/feature_flags.py` (how flags work)
-6. **Legacy Docs:** `docs/ccs-archive/` (historical context)
-7. **EnforceSense:** `docs/enforcesense/` (related project)
+6. **Tenant Middleware:** `backend/app/core/middleware.py` (tenant identification)
+7. **EnforceSense:** `TODO.md` (EnforceSense TODO list)
+8. **Legacy Docs:** `docs/ccs-archive/` (historical context)
 
 ---
 
@@ -291,12 +290,15 @@ docker-compose up -d
 2. Review `MIGRATION_PLAN.md` for context
 3. Check `docs/ccs-archive/` for legacy documentation
 4. Review module code in `backend/app/modules/`
+5. Check EnforceSense TODO list for module-specific tasks
 
 ### **Common Questions:**
 - **"Where is X feature?"** → Check `docs/ccs-archive/` or old workspace
 - **"How do modules work?"** → See `backend/app/modules/base.py`
 - **"What's the migration status?"** → See `MIGRATION_PLAN.md`
 - **"How do I add a module?"** → See module examples in `backend/app/modules/`
+- **"Why is login failing?"** → Check that tenant slug is provided (no default)
+- **"How do I test multi-tenant?"** → Create multiple tenants and test with different slugs
 
 ---
 
@@ -307,7 +309,8 @@ docker-compose up -d
 2. **Respect tenant isolation** - never cross tenant boundaries
 3. **Use module registry** for navigation, not hardcoded routes
 4. **Check permissions** before allowing module access
-5. **Reference legacy docs** when migrating features
+5. **Require tenant slug** - never assume default tenant
+6. **Reference legacy docs** when migrating features
 
 ### **Code Style:**
 - Backend: Python (FastAPI, SQLAlchemy, async/await)
@@ -319,6 +322,7 @@ docker-compose up -d
 - Backend: pytest (when tests exist)
 - Frontend: Manual testing (test framework TBD)
 - Database: Migrations tested manually
+- **Multi-tenant:** Test with multiple tenants to verify isolation
 
 ---
 
@@ -326,38 +330,81 @@ docker-compose up -d
 
 Before considering work complete:
 - [ ] Feature flags checked for module visibility
-- [ ] Tenant isolation verified
+- [ ] Tenant isolation verified (test with multiple tenants)
 - [ ] Module registered in registry
 - [ ] Navigation updated (if UI change)
 - [ ] Permissions checked
+- [ ] Tenant slug required (no default fallback)
 - [ ] Documentation updated
 - [ ] Legacy docs referenced if needed
 
 ---
 
-**Last Updated:** 2025-12-17  
+## 🔍 **Troubleshooting**
+
+### **Login Issues:**
+- **Error: "Tenant identifier required"**
+  - Solution: Provide tenant slug in login form
+  - Check that tenant exists in database
+  - Verify `X-Tenant-ID` header is being sent
+
+- **Error: "Invalid tenant"**
+  - Solution: Verify tenant slug matches database
+  - Check tenant is not soft-deleted
+  - Verify tenant has active status
+
+### **Backend Not Starting:**
+- Check Docker Desktop is running
+- Check logs: `docker-compose logs backend`
+- Verify environment variables are set
+- Check database connection
+
+### **Version Display Issues:**
+- Check `VERSION` file exists in project root
+- Verify `backend/app/core/config.py` has correct version
+- Check version endpoint: `GET /api/v1/version`
+
+---
+
+**Last Updated:** 2025-12-25  
 **Maintained By:** Development Team  
 **Questions?** Check `AGENT_START.md` or `MIGRATION_PLAN.md`
 
 ---
 
-## ✅ **Current System Status (2025-12-17)**
+## ✅ **Current System Status (2025-12-25)**
 
-### **Database:**
-- ✅ **2 Tenants:** System Tenant + Default CCS Tenant
-- ✅ **34 AI Prompts:** All system prompts seeded
-- ✅ **48 Tables:** All application tables created
-- ✅ **Feature Flags:** Column added and populated
+### **Version:**
+- **Platform Version:** 3.7.0
+- **VERSION File:** `3.7.0`
+- **Config Version:** `3.7.0`
 
-### **Services:**
-- ✅ All 9 services running (Frontend, Admin, Backend, PostgreSQL, Redis, Celery Worker, Celery Beat, MailHog, MinIO)
-- ✅ Frontend accessible at http://localhost:3000
-- ✅ Admin Portal accessible at http://localhost:3010
-- ✅ Backend API accessible at http://localhost:8000
+### **Authentication:**
+- ✅ Tenant slug field added to login page
+- ✅ Default tenant fallback removed
+- ✅ Middleware requires explicit tenant identifier
+- ✅ Login API updated to accept tenant slug
 
-### **Data Migration:**
-- ✅ Shared folder copied from CCS
-- ⚠️ Database data: Old CCS database volume was corrupted, started fresh
-- ✅ System tenant and default tenant created automatically
-- ✅ All AI prompts seeded successfully
+### **TypeScript:**
+- ✅ No linter errors in frontend
+- ✅ All type errors resolved
 
+### **Docker:**
+- ⚠️ Docker Desktop not currently running
+- ⚠️ Services status unknown (requires Docker to check)
+
+### **EnforceSense:**
+- ✅ Bulk operations implemented
+- ✅ Case status history tracking
+- ✅ Debtor address management
+- ✅ Vulnerability indicators
+- ✅ Enhanced dashboard with charts
+
+---
+
+**Next Steps:**
+1. Start Docker Desktop
+2. Verify all services start correctly
+3. Test login flow with tenant slug
+4. Verify multi-tenant isolation
+5. Continue EnforceSense module development
