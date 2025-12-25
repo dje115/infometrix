@@ -274,11 +274,15 @@ async def get_dashboard(
             ))
             opp_value = opp_value_result.scalar()
             opportunities_total_value = float(opp_value) if opp_value else 0.0
-        except Exception as e:
-            # Opportunities table doesn't exist - use default values
+        except (Exception, DBAPIError) as e:
+            # Opportunities table doesn't exist or transaction error - rollback and use default values
             import logging
             logger = logging.getLogger(__name__)
             logger.warning(f"Opportunities table not available: {e}")
+            try:
+                await db.rollback()
+            except:
+                pass
             active_opportunities = 0
             opportunities_qualified = 0
             opportunities_proposal_sent = 0
