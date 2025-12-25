@@ -1,11 +1,13 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
 // Vite uses import.meta.env instead of process.env
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// In development with Vite proxy, use relative path to leverage proxy
+// In production or when VITE_API_URL is set, use the explicit URL
+const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '' : 'http://localhost:8000');
 
 // Create axios instance with default config
 const apiClient = axios.create({
-  baseURL: `${API_BASE_URL}/api/v1`,
+  baseURL: API_BASE_URL ? `${API_BASE_URL}/api/v1` : '/api/v1',
   headers: {
     'Content-Type': 'application/json',
   },
