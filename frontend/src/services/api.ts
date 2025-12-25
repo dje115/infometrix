@@ -164,14 +164,19 @@ export default apiClient;
 // Auth API
 export const authAPI = {
   // Passwordless login
-  requestPasswordlessLogin: (email: string) => apiClient.post('/auth/passwordless/request', { email }),
+  requestPasswordlessLogin: (email: string, tenantSlug: string) => apiClient.post('/auth/passwordless/request', { email }, {
+    headers: { 'X-Tenant-ID': tenantSlug }
+  }),
   verifyPasswordlessLogin: (token: string) => apiClient.post('/auth/passwordless/verify', { token }),
   // 2FA
   verify2FA: (tempToken: string, code: string) => apiClient.post('/auth/login/verify-2fa', { temp_token: tempToken, code }),
   getCsrfToken: () => apiClient.get('/auth/csrf-token'),
-  login: (email: string, password: string) =>
+  login: (email: string, password: string, tenantSlug: string) =>
     apiClient.post('/auth/login', new URLSearchParams({ username: email, password }), {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      headers: { 
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Tenant-ID': tenantSlug
+      }
     }),
   getCurrentUser: () => apiClient.get('/auth/me'),
   refresh: (refreshToken: string) => apiClient.post('/auth/refresh', { refresh_token: refreshToken }),

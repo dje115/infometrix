@@ -70,18 +70,13 @@ class TenantMiddleware(BaseHTTPMiddleware):
                     if subdomain and subdomain not in ["www", "api", "localhost"]:
                         provided_tenant = subdomain
             
-            # Default to CCS tenant for development ONLY
-            # In production, reject requests without valid tenant
+            # Require tenant identifier for all environments (dev and production)
             if not provided_tenant:
-                if settings.ENVIRONMENT == "development":
-                    provided_tenant = "ccs"
-                else:
-                    # Production: reject requests without tenant
-                    logger.warning(f"Public route accessed without tenant identifier: {request.url.path}")
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Tenant identifier required (X-Tenant-ID header or subdomain)"
-                    )
+                logger.warning(f"Public route accessed without tenant identifier: {request.url.path}")
+                raise HTTPException(
+                    status_code=400,
+                    detail="Tenant identifier required (X-Tenant-ID header or subdomain)"
+                )
             
             # Check cache first (performance optimization)
             if provided_tenant in _tenant_cache:
@@ -112,48 +107,20 @@ class TenantMiddleware(BaseHTTPMiddleware):
                             if tenant.id != provided_tenant:
                                 _tenant_cache[tenant.id] = tenant_id
                         else:
-                            # Tenant doesn't exist
-                            if settings.ENVIRONMENT == "development":
-                                # Development: try to find default 'ccs' tenant by slug
-                                logger.warning(f"Tenant '{provided_tenant}' not found, trying default 'ccs' tenant")
-                                default_stmt = select(Tenant).where(Tenant.slug == "ccs")
-                                default_result = await session.execute(default_stmt)
-                                default_tenant = default_result.scalar_one_or_none()
-                                if default_tenant:
-                                    tenant_id = default_tenant.id
-                                    _tenant_cache["ccs"] = tenant_id
-                                else:
-                                    # If ccs tenant doesn't exist, just use the slug as fallback
-                                    tenant_id = "ccs"
-                            else:
-                                # Production: reject unknown tenants
-                                logger.warning(f"Unknown tenant '{provided_tenant}' attempted access")
-                                raise HTTPException(
-                                    status_code=404,
-                                    detail=f"Tenant '{provided_tenant}' not found"
-                                )
+                            # Tenant doesn't exist - reject for all environments
+                            logger.warning(f"Unknown tenant '{provided_tenant}' attempted access")
+                            raise HTTPException(
+                                status_code=404,
+                                detail=f"Tenant '{provided_tenant}' not found"
+                            )
                     except HTTPException:
                         raise
                     except Exception as e:
                         logger.error(f"Error validating tenant: {e}", exc_info=True)
-                        if settings.ENVIRONMENT == "development":
-                            # Try to get default ccs tenant ID as fallback
-                            try:
-                                default_stmt = select(Tenant).where(Tenant.slug == "ccs")
-                                default_result = await session.execute(default_stmt)
-                                default_tenant = default_result.scalar_one_or_none()
-                                if default_tenant:
-                                    tenant_id = default_tenant.id
-                                    _tenant_cache["ccs"] = tenant_id
-                                else:
-                                    tenant_id = "ccs"  # Ultimate fallback
-                            except:
-                                tenant_id = "ccs"  # Ultimate fallback
-                        else:
-                            raise HTTPException(
-                                status_code=500,
-                                detail="Error validating tenant"
-                            )
+                        raise HTTPException(
+                            status_code=500,
+                            detail="Error validating tenant"
+                        )
         
         # Store tenant in request state (will be None for authenticated routes until JWT is validated)
         request.state.tenant_id = tenant_id

@@ -16,6 +16,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { authAPI, versionAPI } from '../services/api';
 
 const Login: React.FC = () => {
+  const [tenantSlug, setTenantSlug] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -204,6 +205,18 @@ const Login: React.FC = () => {
               <Box component="form" onSubmit={handleSubmit} sx={{ mt: 3 }}>
                 <TextField
                   fullWidth
+                  label="Tenant Slug"
+                  type="text"
+                  value={tenantSlug}
+                  onChange={(e) => setTenantSlug(e.target.value.toLowerCase().trim())}
+                  required
+                  margin="normal"
+                  autoComplete="organization"
+                  autoFocus
+                  helperText="Enter your tenant identifier (e.g., 'ccs')"
+                />
+                <TextField
+                  fullWidth
                   label="Email"
                   type="email"
                   value={email}
@@ -211,7 +224,6 @@ const Login: React.FC = () => {
                   required
                   margin="normal"
                   autoComplete="email"
-                  autoFocus
                 />
 
                 {loginMethod === 'password' && (
