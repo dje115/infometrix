@@ -426,8 +426,9 @@ async def get_dashboard(
                 ))
             
             # Calculate percentages
-            for stage in pipeline_stages:
-                stage.percentage = (stage.total_value / total_pipeline_value * 100) if total_pipeline_value > 0 else 0.0
+            if pipeline_stages:
+                for stage in pipeline_stages:
+                    stage.percentage = (stage.total_value / total_pipeline_value * 100) if total_pipeline_value > 0 else 0.0
         except (Exception, DBAPIError) as e:
             # Opportunities table doesn't exist or transaction error - rollback and use empty pipeline
             import logging
