@@ -402,30 +402,43 @@ async def get_dashboard(
         total_pipeline_value = 0.0
         
         # Execute queries sequentially and fetch results immediately
-        for idx, stage in enumerate(stages):
-            result = await db.execute(select(func.count(Opportunity.id), func.sum(Opportunity.estimated_value)).where(
-                and_(
-                    Opportunity.tenant_id == tenant_id,
-                    Opportunity.stage == stage.value,  # Use .value to get the string representation
-                    Opportunity.is_deleted == False
-                )
-            ))
-            # Fetch result immediately to avoid connection conflicts
-            row = result.first()
-            count = row[0] if row else 0
-            value = float(row[1]) if row and row[1] else 0.0
-            total_pipeline_value += value
+        # Wrap in try-except to handle cases where opportunities table doesn't exist
+        try:
+            for idx, stage in enumerate(stages):
+                result = await db.execute(select(func.count(Opportunity.id), func.sum(Opportunity.estimated_value)).where(
+                    and_(
+                        Opportunity.tenant_id == tenant_id,
+                        Opportunity.stage == stage,  # Use enum directly, not .value
+                        Opportunity.is_deleted == False
+                    )
+                ))
+                # Fetch result immediately to avoid connection conflicts
+                row = result.first()
+                count = row[0] if row else 0
+                value = float(row[1]) if row and row[1] else 0.0
+                total_pipeline_value += value
+                
+                pipeline_stages.append(PipelineStageItem(
+                    stage=stage_labels[idx],
+                    count=count,
+                    total_value=value,
+                    percentage=0.0  # Will calculate after we have total
+                ))
             
-            pipeline_stages.append(PipelineStageItem(
-                stage=stage_labels[idx],
-                count=count,
-                total_value=value,
-                percentage=0.0  # Will calculate after we have total
-            ))
-        
-        # Calculate percentages
-        for stage in pipeline_stages:
-            stage.percentage = (stage.total_value / total_pipeline_value * 100) if total_pipeline_value > 0 else 0.0
+            # Calculate percentages
+            for stage in pipeline_stages:
+                stage.percentage = (stage.total_value / total_pipeline_value * 100) if total_pipeline_value > 0 else 0.0
+        except (Exception, DBAPIError) as e:
+            # Opportunities table doesn't exist or transaction error - rollback and use empty pipeline
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Pipeline stages query failed: {e}")
+            try:
+                await db.rollback()
+            except:
+                pass
+            pipeline_stages = []
+            total_pipeline_value = 0.0
         
         # Recent activity (last 10 items)
         recent_customers_result = await db.execute(
