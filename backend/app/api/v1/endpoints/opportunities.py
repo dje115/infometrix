@@ -148,7 +148,13 @@ async def get_customer_opportunities(
     current_tenant: Tenant = Depends(get_current_tenant),
     _: None = Depends(lambda: check_permission("opportunities:read"))
 ):
-    """Get all opportunities for a specific customer"""
+    """
+    Get all opportunities for a specific customer
+    
+    PERFORMANCE: Uses AsyncSession and eager loading to prevent N+1 queries.
+    """
+    from sqlalchemy.orm import selectinload
+    
     # Verify customer belongs to tenant
     customer_stmt = select(Customer).where(
         and_(
@@ -165,7 +171,10 @@ async def get_customer_opportunities(
             detail="Customer not found"
         )
     
-    stmt = select(Opportunity).where(
+    # Get opportunities with eager loading
+    stmt = select(Opportunity).options(
+        selectinload(Opportunity.customer)  # Eager load customer to prevent N+1
+    ).where(
         and_(
             Opportunity.customer_id == customer_id,
             Opportunity.tenant_id == current_tenant.id,
@@ -174,7 +183,7 @@ async def get_customer_opportunities(
     ).order_by(Opportunity.created_at.desc())
     
     result = await db.execute(stmt)
-    opportunities = result.scalars().all()
+    opportunities = result.unique().scalars().all()
     
     # Convert stage enum to string for each opportunity
     result = []
