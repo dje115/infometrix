@@ -3,10 +3,12 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies including PostgreSQL client
 RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
+    postgresql-client \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
@@ -16,11 +18,32 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Create entrypoint script inline (since we can't easily copy from parent directory)
+RUN echo '#!/bin/bash\n\
+set -e\n\
+echo "🚀 Starting EnforceSense API..."\n\
+echo ""\n\
+# Wait for PostgreSQL\n\
+echo "⏳ Waiting for PostgreSQL..."\n\
+until PGPASSWORD="${POSTGRES_PASSWORD:-postgres_password_2025}" psql -h "${POSTGRES_HOST:-postgres}" -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-ccs_quote_tool}" -c "\\q" 2>/dev/null; do\n\
+  sleep 1\n\
+done\n\
+echo "✅ PostgreSQL ready"\n\
+echo ""\n\
+# Apply EnforceSense migrations if they exist\n\
+if [ -f "/app/migrations/add_performance_indexes_enforcesense.sql" ]; then\n\
+  echo "📝 Applying EnforceSense performance indexes..."\n\
+  PGPASSWORD="${POSTGRES_PASSWORD:-postgres_password_2025}" psql -h "${POSTGRES_HOST:-postgres}" -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-ccs_quote_tool}" -f /app/migrations/add_performance_indexes_enforcesense.sql 2>&1 | grep -v "already exists" || true\n\
+  echo "✅ Migrations completed"\n\
+  echo ""\n\
+fi\n\
+echo "🎯 Starting application..."\n\
+exec "$@"\n\
+' > /usr/local/bin/docker-entrypoint.sh && chmod +x /usr/local/bin/docker-entrypoint.sh
+
 # Expose port
 EXPOSE 8001
 
-# Run with hot reload
+# Use entrypoint script to run migrations before starting
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001", "--reload"]
-
-
-
