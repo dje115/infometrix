@@ -51,6 +51,13 @@ This session focused on fixing critical performance issues, implementing compreh
   - Reduced query time from sum of all queries to max of parallel queries
   - Improved error handling for missing tables (helpdesk, quotes)
 
+### 4.6. Opportunities Endpoint Optimization ✅
+- **File:** `backend/app/api/v1/endpoints/opportunities.py`
+- **Optimizations:**
+  - Added eager loading (`selectinload`) for customer relationship
+  - Prevents N+1 queries when accessing customer data
+  - Applied to `list_opportunities`, `get_customer_opportunities`, and `get_opportunity` endpoints
+
 ### 5. Docker Integration ✅
 - **Files Created/Modified:**
   - `backend/scripts/docker-entrypoint.sh` - Automatic migration script
