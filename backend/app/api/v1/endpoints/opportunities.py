@@ -87,8 +87,16 @@ async def list_opportunities(
     current_tenant: Tenant = Depends(get_current_tenant),
     _: None = Depends(lambda: check_permission("opportunities:read"))
 ):
-    """List all opportunities for the current tenant"""
-    stmt = select(Opportunity).where(
+    """
+    List all opportunities for the current tenant
+    
+    PERFORMANCE: Uses AsyncSession and eager loading to prevent N+1 queries.
+    """
+    from sqlalchemy.orm import selectinload
+    
+    stmt = select(Opportunity).options(
+        selectinload(Opportunity.customer)  # Eager load customer to prevent N+1
+    ).where(
         and_(
             Opportunity.tenant_id == current_tenant.id,
             Opportunity.is_deleted == False
@@ -103,7 +111,7 @@ async def list_opportunities(
     stmt = stmt.order_by(Opportunity.created_at.desc())
     
     result = await db.execute(stmt)
-    opportunities = result.scalars().all()
+    opportunities = result.unique().scalars().all()
     
     # Convert stage enum to string for each opportunity
     result = []
