@@ -38,20 +38,43 @@ class TenantMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # Skip tenant processing entirely for endpoints that don't need tenant context
         # Version, health, and root endpoints don't need tenant validation
+        path = request.url.path
+        
+        # Normalize path (remove trailing slashes for comparison)
+        normalized_path = path.rstrip('/')
+        
+        # Check if this is a route that should skip tenant processing
+        # Handle both with and without query strings
+        path_without_query = path.split('?')[0] if '?' in path else path
+        normalized_path_no_query = path_without_query.rstrip('/')
+        
         skip_tenant_routes = (
-            request.url.path.startswith("/api/v1/version") or
-            request.url.path.startswith("/health") or
-            request.url.path == "/"
+            normalized_path == "/api/v1/version" or
+            normalized_path_no_query == "/api/v1/version" or
+            path == "/api/v1/version" or
+            path_without_query == "/api/v1/version" or
+            path.startswith("/api/v1/version") or  # This will match /version, /version/, /version?query
+            path.startswith("/api/v1/ws") or  # WebSocket endpoint - handles auth internally
+            path.startswith("/health") or
+            normalized_path == "/" or
+            path == "/"
         )
         
         if skip_tenant_routes:
-            # These endpoints don't need tenant context at all
+            # These endpoints don't need tenant context at all - skip all tenant processing
+            logger.debug(f"Skipping tenant processing for path: {path}")
             response = await call_next(request)
             return response
         
-        # Only set tenant for public routes (auth endpoints)
-        # For authenticated routes, tenant will be validated from JWT in dependencies
-        is_public_route = request.url.path.startswith("/api/v1/auth/")
+        # Only set tenant for *unauthenticated* routes that truly need tenant context.
+        # Authenticated routes derive tenant from JWT in dependencies (get_current_user/get_current_tenant).
+        # Public endpoints like CSRF token and /auth/me should NOT require X-Tenant-ID.
+        path_for_public_check = normalized_path_no_query
+        public_tenant_required_routes = {
+            "/api/v1/auth/login",
+            "/api/v1/auth/passwordless/request",
+        }
+        is_public_route = path_for_public_check in public_tenant_required_routes
         
         tenant_id = None
         
@@ -59,8 +82,12 @@ class TenantMiddleware(BaseHTTPMiddleware):
             # For public routes, allow subdomain or header-based tenant detection
             # but we'll validate it exists in the database
             
-            # Try to get tenant from header
-            provided_tenant = request.headers.get("X-Tenant-ID")
+            # Try to get tenant from header (case-insensitive)
+            provided_tenant = request.headers.get("X-Tenant-ID") or request.headers.get("x-tenant-id")
+            
+            # Debug: log all headers for troubleshooting
+            if not provided_tenant:
+                logger.debug(f"X-Tenant-ID header not found. Available headers: {list(request.headers.keys())}")
             
             # Try to get tenant from subdomain
             if not provided_tenant:
@@ -72,7 +99,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
             
             # Require tenant identifier for all environments (dev and production)
             if not provided_tenant:
-                logger.warning(f"Public route accessed without tenant identifier: {request.url.path}")
+                logger.warning(f"Public route accessed without tenant identifier: {request.url.path}. Headers: {dict(request.headers)}")
                 raise HTTPException(
                     status_code=400,
                     detail="Tenant identifier required (X-Tenant-ID header or subdomain)"
@@ -106,9 +133,10 @@ class TenantMiddleware(BaseHTTPMiddleware):
                                 _tenant_cache[tenant.slug] = tenant_id
                             if tenant.id != provided_tenant:
                                 _tenant_cache[tenant.id] = tenant_id
+                            logger.debug(f"Tenant '{provided_tenant}' resolved to tenant_id: {tenant_id}")
                         else:
                             # Tenant doesn't exist - reject for all environments
-                            logger.warning(f"Unknown tenant '{provided_tenant}' attempted access")
+                            logger.warning(f"Unknown tenant '{provided_tenant}' attempted access to {request.url.path}")
                             raise HTTPException(
                                 status_code=404,
                                 detail=f"Tenant '{provided_tenant}' not found"
@@ -116,7 +144,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
                     except HTTPException:
                         raise
                     except Exception as e:
-                        logger.error(f"Error validating tenant: {e}", exc_info=True)
+                        logger.error(f"Error validating tenant '{provided_tenant}': {e}", exc_info=True)
                         raise HTTPException(
                             status_code=500,
                             detail="Error validating tenant"

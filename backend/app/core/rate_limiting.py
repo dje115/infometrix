@@ -54,6 +54,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     ]
     PUBLIC_PATTERNS = [
         "/api/v1/auth/csrf-token",  # CSRF token endpoint (public)
+        "/api/v1/version",  # Version endpoint (public)
         "/health",
         "/docs",
         "/redoc",

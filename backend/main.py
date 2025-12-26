@@ -118,10 +118,14 @@ app.add_middleware(
 )
 
 # Add trusted host middleware
-app.add_middleware(
-    TrustedHostMiddleware,
-    allowed_hosts=["localhost", "127.0.0.1", "*.localhost"]
-)
+# DEV: relax host validation to avoid "Invalid host header" when using Vite proxy / Docker networking.
+# PROD: restrict to explicit domains to prevent Host-header attacks.
+if settings.ENVIRONMENT == "production":
+    allowed_hosts = settings.ALLOWED_HOSTS if hasattr(settings, "ALLOWED_HOSTS") else ["localhost"]
+else:
+    allowed_hosts = ["*"]
+
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 
 # Add custom middleware (order matters - security headers first)
 app.add_middleware(SecurityHeadersMiddleware)
@@ -193,9 +197,25 @@ async def global_exception_handler(request: Request, exc: Exception):
     from fastapi import HTTPException
     from app.core.error_handler import create_error_response
     
-    # Don't handle HTTPException here - it's handled above
+    # If an HTTPException leaks here (or is wrapped inside an ExceptionGroup),
+    # return a proper 4xx/5xx response rather than re-raising and causing a 500.
     if isinstance(exc, HTTPException):
-        raise exc
+        return await http_exception_handler(request, exc)
+    if isinstance(exc, BaseExceptionGroup):
+        # Unwrap common case: middleware raised HTTPException inside AnyIO task group
+        def find_http_exception(group: BaseExceptionGroup) -> HTTPException | None:
+            for sub in group.exceptions:
+                if isinstance(sub, HTTPException):
+                    return sub
+                if isinstance(sub, BaseExceptionGroup):
+                    nested = find_http_exception(sub)
+                    if nested:
+                        return nested
+            return None
+
+        http_exc = find_http_exception(exc)
+        if http_exc:
+            return await http_exception_handler(request, http_exc)
     
     # Get the origin from the request
     origin = request.headers.get("origin")

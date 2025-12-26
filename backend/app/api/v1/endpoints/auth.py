@@ -3,7 +3,7 @@
 Authentication endpoints
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Response, Cookie, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Cookie, Header, Request
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -85,10 +85,12 @@ class Login2FARequiredResponse(BaseModel):
 
 @router.post("/login", response_model=LoginResponse)
 async def login(
+    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
-    request: Request = None,
-    response: Response = None,
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    user_agent: Optional[str] = Header(None),
+    x_forwarded_for: Optional[str] = Header(None),
 ):
     """
     Login endpoint - sets HttpOnly cookies and returns user info
@@ -98,8 +100,31 @@ async def login(
     
     PERFORMANCE: Uses AsyncSession to prevent blocking the event loop.
     """
-    # Find user by email or username
+    import logging
+    logger = logging.getLogger(__name__)
+
+    if not x_tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant identifier required",
+        )
+
+    # Resolve tenant id from header (slug or id)
+    tenant_stmt = select(Tenant).where(or_(Tenant.slug == x_tenant_id, Tenant.id == x_tenant_id))
+    tenant_result = await db.execute(tenant_stmt)
+    tenant = tenant_result.scalars().first()
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid tenant identifier",
+        )
+
+    tenant_id = tenant.id
+    logger.info(f"Login attempt - tenant_id: {tenant_id}, username: {form_data.username}")
+    
+    # Find user by email or username, scoped to the tenant
     stmt = select(User).where(
+        User.tenant_id == tenant_id,
         or_(
             User.email == form_data.username,
             User.username == form_data.username
@@ -138,8 +163,7 @@ async def login(
             sync_db = SessionLocal()
             try:
                 password_service = PasswordSecurityService(sync_db)
-                ip_address = request.client.host if request and request.client else None
-                user_agent = request.headers.get("user-agent") if request else None
+                ip_address = (x_forwarded_for.split(",")[0].strip() if x_forwarded_for else None)
                 password_service.record_failed_attempt(user.id, ip_address=ip_address, user_agent=user_agent)
             finally:
                 sync_db.close()

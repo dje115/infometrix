@@ -418,9 +418,9 @@ export const planningAPI = {
   deleteKeyword: (id: string) => apiClient.delete(`/planning/keywords/${id}`),
 };
 
-// Version API
+// Version API - with short timeout for fast failure
 export const versionAPI = {
-  get: () => apiClient.get('/version'),
+  get: () => apiClient.get('/version', { timeout: 2000 }), // 2 second timeout for fast failure
 };
 
 // AI Prompts API

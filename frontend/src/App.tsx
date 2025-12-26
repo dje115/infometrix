@@ -4,17 +4,19 @@ import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { CircularProgress, Box } from '@mui/material';
 
-// Initialize i18n
-import './i18n';
+// Lazy load i18n - only initialize when needed (not on login page)
+const initializeI18n = () => import('./i18n/index');
 
-// Components (keep as regular imports - needed immediately)
-import Layout from './components/Layout';
-import GlobalAIMonitor from './components/GlobalAIMonitor';
+// Components - Lazy load Layout (contains large MUI icons bundle, not needed on login page)
+const Layout = lazy(() => import('./components/Layout'));
+// GlobalAIMonitor only needed on protected routes, lazy load it
+const GlobalAIMonitor = lazy(() => import('./components/GlobalAIMonitor'));
 import { WebSocketProvider } from './contexts/WebSocketContext';
 
-// Pages - Lazy load for code splitting (reduces initial bundle size)
-const Login = lazy(() => import('./pages/Login'));
-const Signup = lazy(() => import('./pages/Signup'));
+// Pages - Login and Signup load immediately (critical path, should be fast)
+// Other pages lazy load for code splitting
+import Login from './pages/Login';
+import Signup from './pages/Signup';
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Customers = lazy(() => import('./pages/Customers'));
 const Competitors = lazy(() => import('./pages/Competitors'));
@@ -148,20 +150,54 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
     return <LoadingFallback />;
   }
   
-  return isAuthenticated ? <Layout>{children}</Layout> : <Navigate to="/login" />;
+  if (!isAuthenticated) {
+    return <Navigate to="/login" />;
+  }
+  
+  // Layout is lazy-loaded, wrap in Suspense
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <Layout>{children}</Layout>
+    </Suspense>
+  );
+};
+
+// Conditionally render GlobalAIMonitor only on protected routes
+const ConditionalGlobalAIMonitor: React.FC = () => {
+  const location = window.location.pathname;
+  const isPublicPage = location === '/login' || location === '/signup';
+  
+  if (isPublicPage) {
+    return null;
+  }
+  
+  return (
+    <Suspense fallback={null}>
+      <GlobalAIMonitor />
+    </Suspense>
+  );
 };
 
 function App() {
+  // Initialize i18n on app load (but don't block render)
+  React.useEffect(() => {
+    initializeI18n();
+  }, []);
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <WebSocketProvider>
         <BrowserRouter>
-          <GlobalAIMonitor />
+          {/* Only load GlobalAIMonitor on protected routes (not login/signup) */}
+          <ConditionalGlobalAIMonitor />
+          <Routes>
+            {/* Login and Signup load immediately (no Suspense) - critical path */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
+          </Routes>
           <Suspense fallback={<LoadingFallback />}>
             <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
           <Route
             path="/dashboard"
             element={

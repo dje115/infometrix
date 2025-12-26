@@ -57,12 +57,14 @@ export const useWebSocket = (): UseWebSocketReturn => {
       const { authAPI } = await import('../services/api');
       await authAPI.getCurrentUser();
       isAuthenticated = true;
+      console.log('[WebSocket] Authentication verified, proceeding with connection');
     } catch (error) {
-      console.log('[WebSocket] Not authenticated, skipping connection');
+      console.log('[WebSocket] Not authenticated, skipping connection. Error:', error);
       return;
     }
     
     if (!isAuthenticated) {
+      console.log('[WebSocket] Authentication check failed, skipping connection');
       return;
     }
     
@@ -106,6 +108,8 @@ export const useWebSocket = (): UseWebSocketReturn => {
     
     const wsBaseUrl = getWebSocketUrl();
     const wsUrl = `${wsBaseUrl}/api/v1/ws`;
+    
+    console.log('[WebSocket] Attempting to connect to:', wsUrl);
 
     try {
       // Close existing connection if any

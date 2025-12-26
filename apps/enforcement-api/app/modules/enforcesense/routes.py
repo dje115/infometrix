@@ -21,7 +21,23 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, EmailStr
 from datetime import datetime, timezone
 import uuid
+import sys
+from pathlib import Path
 
+# IMPORTANT: Import enforcement-api services BEFORE importing dependencies
+# This ensures we get enforcement-api's services, not backend's (which gets added to sys.path by dependencies.py)
+# Add enforcement-api's root (/app) to sys.path first to ensure correct imports
+# routes.py is at /app/app/modules/enforcesense/routes.py, so we need to go up 3 levels to get /app
+enforcement_api_root = Path(__file__).parent.parent.parent.parent  # /app
+if str(enforcement_api_root) not in sys.path:
+    sys.path.insert(0, str(enforcement_api_root))
+
+# Now import services (will use enforcement-api's app/services)
+from app.services.case_transaction_service import CaseTransactionService
+from app.services.payment_processing_service import PaymentProcessingService
+from app.services.arrangement_service import ArrangementService
+
+# Now import dependencies (which will add /backend to sys.path, but services are already imported)
 from app.core.dependencies import get_current_user, get_current_tenant, check_permission
 from app.core.database import get_async_db
 from app.models.tenant import User, Tenant
@@ -32,9 +48,6 @@ from app.modules.enforcesense.models import (
     PaymentAllocation, PaymentAllocationMethod,
     Arrangement, ArrangementStatus, DebtorAuditLog, CaseStatusHistory
 )
-from app.services.case_transaction_service import CaseTransactionService
-from app.services.payment_processing_service import PaymentProcessingService
-from app.services.arrangement_service import ArrangementService
 from decimal import Decimal
 
 router = APIRouter(prefix="/enforcesense", tags=["EnforceSense"])
@@ -284,9 +297,9 @@ async def list_debtors(
 @router.get("/debtors/{debtor_id}", response_model=DebtorResponse)
 async def get_debtor(
     debtor_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(get_current_user),
-    request: Optional[Request] = None
+    current_user: User = Depends(get_current_user)
 ):
     """Get a single debtor and log the access"""
     await check_permission(current_user, "enforcesense:view")
@@ -309,8 +322,8 @@ async def get_debtor(
     
     # Log the access for audit trail
     try:
-        client_ip = request.client.host if request and request.client else None
-        user_agent = request.headers.get("user-agent") if request else None
+        client_ip = request.client.host if request.client else None
+        user_agent = request.headers.get("user-agent")
         
         audit_log = DebtorAuditLog(
             id=str(uuid.uuid4()),

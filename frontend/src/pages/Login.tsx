@@ -31,21 +31,15 @@ const Login: React.FC = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const fetchVersion = async () => {
-      try {
-        const response = await versionAPI.get();
-        setVersion(response.data.version);
-      } catch (error) {
-        console.error('Failed to fetch version:', error);
-      }
-    };
-    fetchVersion();
-    
     // Check if we have a passwordless token in URL
     const token = searchParams.get('token');
     if (token) {
       handlePasswordlessVerify(token);
     }
+    
+    // Version is already set to default (3.7.0) - no need to fetch
+    // Fetching version causes 400 errors and delays, so we skip it on login page
+    // Version will be fetched on authenticated pages where it's more reliable
   }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
