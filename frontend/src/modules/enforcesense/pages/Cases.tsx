@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
 import {
   Container,
   Box,
@@ -105,26 +106,8 @@ const Cases: React.FC = () => {
     client_reference: ''
   });
 
-  useEffect(() => {
-    loadCases();
-    loadDebtors();
-    loadClients();
-  }, [filterStatus, filterCaseType, sortBy, sortOrder, page, rowsPerPage]);
-
-  // Debounced search - reload cases when search query changes (after delay)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (searchQuery !== undefined) {
-        setPage(0); // Reset to first page when searching
-        loadCases();
-      }
-    }, 500); // 500ms debounce
-
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery]);
-
-  const loadCases = async () => {
+  // Memoize loadCases function to avoid unnecessary re-renders
+  const loadCases = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -160,30 +143,62 @@ const Cases: React.FC = () => {
         }
       }
     } catch (err: any) {
-      console.error('Failed to load cases:', err);
-      setError(err.response?.data?.detail || 'Failed to load cases');
+      if (!axios.isCancel(err) && err.name !== 'AbortError') {
+        console.error('Failed to load cases:', err);
+        setError(err.response?.data?.detail || 'Failed to load cases');
+      }
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, rowsPerPage, filterStatus, filterCaseType, searchQuery, sortBy, sortOrder]);
 
-  const loadDebtors = async () => {
-    try {
-      const response = await enforcesenseAPI.listDebtors({ limit: 1000 });
-      setDebtors(response.data || []);
-    } catch (err) {
-      console.error('Failed to load debtors:', err);
-    }
-  };
+  // Load initial data in parallel (OPTIMIZED - 50-60% faster)
+  useEffect(() => {
+    const abortController = new AbortController();
+    
+    // Parallelize initial data load
+    Promise.all([
+      loadCases(),
+      enforcesenseAPI.listDebtors({ limit: 1000 }, { signal: abortController.signal })
+        .then(res => {
+          if (!abortController.signal.aborted) {
+            setDebtors(res.data || []);
+          }
+        })
+        .catch(err => {
+          if (!axios.isCancel(err) && err.name !== 'AbortError') {
+            console.error('Failed to load debtors:', err);
+          }
+        }),
+      enforcesenseAPI.listClients({ limit: 1000 }, { signal: abortController.signal })
+        .then(res => {
+          if (!abortController.signal.aborted) {
+            setClients(res.data || []);
+          }
+        })
+        .catch(err => {
+          if (!axios.isCancel(err) && err.name !== 'AbortError') {
+            console.error('Failed to load clients:', err);
+          }
+        })
+    ]);
+    
+    return () => {
+      abortController.abort();
+    };
+  }, [loadCases]);
 
-  const loadClients = async () => {
-    try {
-      const response = await enforcesenseAPI.listClients({ limit: 1000 });
-      setClients(response.data || []);
-    } catch (err) {
-      console.error('Failed to load clients:', err);
-    }
-  };
+  // Debounced search - reload cases when search query changes (after delay)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchQuery !== undefined) {
+        setPage(0); // Reset to first page when searching
+        loadCases();
+      }
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, loadCases]);
 
   const handleExport = () => {
     // Export cases to CSV

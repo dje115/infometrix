@@ -31,78 +31,78 @@ enforcementApiClient.interceptors.response.use(
 
 export const enforcesenseAPI = {
   // Dashboard
-  getDashboard: () => enforcementApiClient.get('/enforcesense/dashboard'),
+  getDashboard: (config?: any) => enforcementApiClient.get('/enforcesense/dashboard', config),
 
   // Debtors
-  listDebtors: (params?: any) => enforcementApiClient.get('/enforcesense/debtors', { params }),
-  getDebtor: (id: string) => enforcementApiClient.get(`/enforcesense/debtors/${id}`),
-  createDebtor: (data: any) => enforcementApiClient.post('/enforcesense/debtors', data),
-  updateDebtor: (id: string, data: any) => enforcementApiClient.put(`/enforcesense/debtors/${id}`, data),
-  deleteDebtor: (id: string) => enforcementApiClient.delete(`/enforcesense/debtors/${id}`),
-  getDebtorAuditLogs: (id: string, params?: any) => enforcementApiClient.get(`/enforcesense/debtors/${id}/audit`, { params }),
-  addDebtorAddress: (debtorId: string, data: any) => enforcementApiClient.post(`/enforcesense/debtors/${debtorId}/addresses`, data),
-  updateDebtorAddress: (debtorId: string, addressId: string, data: any) => enforcementApiClient.put(`/enforcesense/debtors/${debtorId}/addresses/${addressId}`, data),
-  deleteDebtorAddress: (debtorId: string, addressId: string) => enforcementApiClient.delete(`/enforcesense/debtors/${debtorId}/addresses/${addressId}`),
-  updateDebtorVulnerability: (debtorId: string, data: any) => enforcementApiClient.put(`/enforcesense/debtors/${debtorId}/vulnerability`, data),
+  listDebtors: (params?: any, config?: any) => enforcementApiClient.get('/enforcesense/debtors', { params, ...config }),
+  getDebtor: (id: string, config?: any) => enforcementApiClient.get(`/enforcesense/debtors/${id}`, config),
+  createDebtor: (data: any, config?: any) => enforcementApiClient.post('/enforcesense/debtors', data, config),
+  updateDebtor: (id: string, data: any, config?: any) => enforcementApiClient.put(`/enforcesense/debtors/${id}`, data, config),
+  deleteDebtor: (id: string, config?: any) => enforcementApiClient.delete(`/enforcesense/debtors/${id}`, config),
+  getDebtorAuditLogs: (id: string, params?: any, config?: any) => enforcementApiClient.get(`/enforcesense/debtors/${id}/audit`, { params, ...config }),
+  addDebtorAddress: (debtorId: string, data: any, config?: any) => enforcementApiClient.post(`/enforcesense/debtors/${debtorId}/addresses`, data, config),
+  updateDebtorAddress: (debtorId: string, addressId: string, data: any, config?: any) => enforcementApiClient.put(`/enforcesense/debtors/${debtorId}/addresses/${addressId}`, data, config),
+  deleteDebtorAddress: (debtorId: string, addressId: string, config?: any) => enforcementApiClient.delete(`/enforcesense/debtors/${debtorId}/addresses/${addressId}`, config),
+  updateDebtorVulnerability: (debtorId: string, data: any, config?: any) => enforcementApiClient.put(`/enforcesense/debtors/${debtorId}/vulnerability`, data, config),
 
   // Clients
-  listClients: (params?: any) => enforcementApiClient.get('/enforcesense/clients', { params }),
-  getClient: (id: string) => enforcementApiClient.get(`/enforcesense/clients/${id}`),
-  createClient: (data: any) => enforcementApiClient.post('/enforcesense/clients', data),
-  updateClient: (id: string, data: any) => enforcementApiClient.put(`/enforcesense/clients/${id}`, data),
+  listClients: (params?: any, config?: any) => enforcementApiClient.get('/enforcesense/clients', { params, ...config }),
+  getClient: (id: string, config?: any) => enforcementApiClient.get(`/enforcesense/clients/${id}`, config),
+  createClient: (data: any, config?: any) => enforcementApiClient.post('/enforcesense/clients', data, config),
+  updateClient: (id: string, data: any, config?: any) => enforcementApiClient.put(`/enforcesense/clients/${id}`, data, config),
 
   // Cases
-  listCases: (params?: any) => enforcementApiClient.get('/enforcesense/cases', { params }),
-  getCase: (id: string) => enforcementApiClient.get(`/enforcesense/cases/${id}`),
-  createCase: (data: any) => enforcementApiClient.post('/enforcesense/cases', data),
-  updateCase: (id: string, data: any) => enforcementApiClient.put(`/enforcesense/cases/${id}`, data),
-  getCaseStatusHistory: (id: string, params?: any) => enforcementApiClient.get(`/enforcesense/cases/${id}/status-history`, { params }),
-  bulkUpdateCaseStatus: (data: any) => enforcementApiClient.post('/enforcesense/cases/bulk-update-status', data),
-  bulkAssignCases: (data: any) => enforcementApiClient.post('/enforcesense/cases/bulk-assign', data),
+  listCases: (params?: any, config?: any) => enforcementApiClient.get('/enforcesense/cases', { params, ...config }),
+  getCase: (id: string, config?: any) => enforcementApiClient.get(`/enforcesense/cases/${id}`, config),
+  createCase: (data: any, config?: any) => enforcementApiClient.post('/enforcesense/cases', data, config),
+  updateCase: (id: string, data: any, config?: any) => enforcementApiClient.put(`/enforcesense/cases/${id}`, data, config),
+  getCaseStatusHistory: (id: string, params?: any, config?: any) => enforcementApiClient.get(`/enforcesense/cases/${id}/status-history`, { params, ...config }),
+  bulkUpdateCaseStatus: (data: any, config?: any) => enforcementApiClient.post('/enforcesense/cases/bulk-update-status', data, config),
+  bulkAssignCases: (data: any, config?: any) => enforcementApiClient.post('/enforcesense/cases/bulk-assign', data, config),
 
   // Case Notes (with AI improvement)
-  addCaseNote: (caseId: string, note: string, triggerAI: boolean = true) =>
-    enforcementApiClient.post(`/enforcesense/cases/${caseId}/notes`, { note, trigger_ai: triggerAI }),
-  getCaseNotes: (caseId: string) => enforcementApiClient.get(`/enforcesense/cases/${caseId}/notes`),
-  improveNote: (caseId: string, noteId: string) =>
-    enforcementApiClient.post(`/enforcesense/cases/${caseId}/notes/${noteId}/improve`),
+  addCaseNote: (caseId: string, note: string, triggerAI: boolean = true, config?: any) =>
+    enforcementApiClient.post(`/enforcesense/cases/${caseId}/notes`, { note, trigger_ai: triggerAI }, config),
+  getCaseNotes: (caseId: string, config?: any) => enforcementApiClient.get(`/enforcesense/cases/${caseId}/notes`, config),
+  improveNote: (caseId: string, noteId: string, config?: any) =>
+    enforcementApiClient.post(`/enforcesense/cases/${caseId}/notes/${noteId}/improve`, {}, config),
 
   // Case Transactions / Ledger
-  getCaseLedger: (caseId: string, params?: any) =>
-    enforcementApiClient.get(`/enforcesense/cases/${caseId}/ledger`, { params }),
-  getCaseBalance: (caseId: string) =>
-    enforcementApiClient.get(`/enforcesense/cases/${caseId}/balance`),
-  recordPrincipalCharge: (caseId: string, data: any) =>
-    enforcementApiClient.post(`/enforcesense/cases/${caseId}/principal-charge`, data),
-  recordFee: (caseId: string, data: any) =>
-    enforcementApiClient.post(`/enforcesense/cases/${caseId}/fee`, data),
-  recordInterest: (caseId: string, data: any) =>
-    enforcementApiClient.post(`/enforcesense/cases/${caseId}/interest`, data),
-  recordCost: (caseId: string, data: any) =>
-    enforcementApiClient.post(`/enforcesense/cases/${caseId}/cost`, data),
+  getCaseLedger: (caseId: string, params?: any, config?: any) =>
+    enforcementApiClient.get(`/enforcesense/cases/${caseId}/ledger`, { params, ...config }),
+  getCaseBalance: (caseId: string, config?: any) =>
+    enforcementApiClient.get(`/enforcesense/cases/${caseId}/balance`, config),
+  recordPrincipalCharge: (caseId: string, data: any, config?: any) =>
+    enforcementApiClient.post(`/enforcesense/cases/${caseId}/principal-charge`, data, config),
+  recordFee: (caseId: string, data: any, config?: any) =>
+    enforcementApiClient.post(`/enforcesense/cases/${caseId}/fee`, data, config),
+  recordInterest: (caseId: string, data: any, config?: any) =>
+    enforcementApiClient.post(`/enforcesense/cases/${caseId}/interest`, data, config),
+  recordCost: (caseId: string, data: any, config?: any) =>
+    enforcementApiClient.post(`/enforcesense/cases/${caseId}/cost`, data, config),
 
   // Payment Processing
-  recordPayment: (caseId: string, data: any) =>
-    enforcementApiClient.post(`/enforcesense/cases/${caseId}/payments`, data),
-  allocatePayment: (paymentEntryId: string, data: any) =>
-    enforcementApiClient.post(`/enforcesense/payments/${paymentEntryId}/allocate`, data),
-  getPaymentAllocation: (paymentEntryId: string) =>
-    enforcementApiClient.get(`/enforcesense/payments/${paymentEntryId}/allocation`),
-  getCasePayments: (caseId: string, params?: any) =>
-    enforcementApiClient.get(`/enforcesense/cases/${caseId}/payments`, { params }),
-  processRefund: (caseId: string, data: any) =>
-    enforcementApiClient.post(`/enforcesense/cases/${caseId}/refunds`, data),
+  recordPayment: (caseId: string, data: any, config?: any) =>
+    enforcementApiClient.post(`/enforcesense/cases/${caseId}/payments`, data, config),
+  allocatePayment: (paymentEntryId: string, data: any, config?: any) =>
+    enforcementApiClient.post(`/enforcesense/payments/${paymentEntryId}/allocate`, data, config),
+  getPaymentAllocation: (paymentEntryId: string, config?: any) =>
+    enforcementApiClient.get(`/enforcesense/payments/${paymentEntryId}/allocation`, config),
+  getCasePayments: (caseId: string, params?: any, config?: any) =>
+    enforcementApiClient.get(`/enforcesense/cases/${caseId}/payments`, { params, ...config }),
+  processRefund: (caseId: string, data: any, config?: any) =>
+    enforcementApiClient.post(`/enforcesense/cases/${caseId}/refunds`, data, config),
 
   // Arrangements
-  createArrangement: (caseId: string, data: any) =>
-    enforcementApiClient.post(`/enforcesense/cases/${caseId}/arrangements`, data),
-  getCaseArrangements: (caseId: string, params?: any) =>
-    enforcementApiClient.get(`/enforcesense/cases/${caseId}/arrangements`, { params }),
-  getArrangement: (arrangementId: string) =>
-    enforcementApiClient.get(`/enforcesense/arrangements/${arrangementId}`),
-  updateArrangementSchedule: (arrangementId: string, data: any) =>
-    enforcementApiClient.put(`/enforcesense/arrangements/${arrangementId}/schedule`, data),
-  updateArrangementStatus: (arrangementId: string, data: any) =>
-    enforcementApiClient.put(`/enforcesense/arrangements/${arrangementId}/status`, data),
+  createArrangement: (caseId: string, data: any, config?: any) =>
+    enforcementApiClient.post(`/enforcesense/cases/${caseId}/arrangements`, data, config),
+  getCaseArrangements: (caseId: string, params?: any, config?: any) =>
+    enforcementApiClient.get(`/enforcesense/cases/${caseId}/arrangements`, { params, ...config }),
+  getArrangement: (arrangementId: string, config?: any) =>
+    enforcementApiClient.get(`/enforcesense/arrangements/${arrangementId}`, config),
+  updateArrangementSchedule: (arrangementId: string, data: any, config?: any) =>
+    enforcementApiClient.put(`/enforcesense/arrangements/${arrangementId}/schedule`, data, config),
+  updateArrangementStatus: (arrangementId: string, data: any, config?: any) =>
+    enforcementApiClient.put(`/enforcesense/arrangements/${arrangementId}/status`, data, config),
 };
 
