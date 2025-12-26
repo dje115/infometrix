@@ -105,6 +105,9 @@ export default defineConfig({
       'react',
       'react-dom',
       'react-router-dom',
+      // Fix dev-time ESM/CJS interop: @mui/utils deepmerge imports named exports from react-is
+      // Ensure react-is is pre-bundled so named exports like `isValidElementType` work in the browser.
+      'react-is',
       '@mui/material',
       '@mui/system',
     ],
@@ -115,7 +118,9 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': '/src'
-    }
+    },
+    // Ensure single instances across nested node_modules (prevents subtle runtime issues)
+    dedupe: ['react', 'react-dom', 'react-is']
   }
 })
 
