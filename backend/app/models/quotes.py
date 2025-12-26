@@ -128,7 +128,7 @@ class Quote(BaseModel):
     notes = Column(Text, nullable=True)
     
     # Template and customization
-    template_id = Column(String(36), ForeignKey("quote_templates.id"), nullable=True)
+    template_id = Column(String(36), ForeignKey("quote_templates.id"), nullable=True, index=True)
     custom_fields = Column(JSON, nullable=True)
     
     # Tracking
@@ -144,7 +144,7 @@ class Quote(BaseModel):
     last_prompt_text = Column(Text, nullable=True)  # The last prompt text used to generate this quote
     
     # Created by
-    created_by = Column(String(36), ForeignKey("users.id"), nullable=True)
+    created_by = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
     
     # Relationships
     template = relationship("QuoteTemplate")
@@ -190,7 +190,7 @@ class QuoteItem(BaseModel):
     tax_rate = Column(Float, default=0, nullable=True)
     
     # Supplier / configuration details
-    supplier_id = Column(String(36), ForeignKey("suppliers.id"), nullable=True)
+    supplier_id = Column(String(36), ForeignKey("suppliers.id"), nullable=True, index=True)
     is_optional = Column(Boolean, default=False, nullable=False)
     is_alternate = Column(Boolean, default=False, nullable=False)
     alternate_group = Column(String(36), nullable=True)
