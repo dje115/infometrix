@@ -2,6 +2,41 @@
 
 **IMPORTANT:** These migrations must be applied to fix the timeout errors!
 
+**Environments:** Docker (Development), Azure (Production), AWS (Production)
+
+---
+
+## 🚀 Quick Start
+
+### Docker (Development)
+```bash
+# Migrations apply automatically on container start
+docker-compose up -d
+
+# Or manually:
+.\scripts\apply_migrations_docker.ps1
+```
+
+### Azure (Production)
+```bash
+export AZURE_DB_HOST="your-server.postgres.database.azure.com"
+export AZURE_DB_USER="adminuser@your-server"
+export AZURE_DB_PASSWORD="your-password"
+./scripts/apply_migrations_azure.sh
+```
+
+### AWS (Production)
+```bash
+export AWS_DB_HOST="your-db.xxxxx.us-east-1.rds.amazonaws.com"
+export AWS_DB_USER="adminuser"
+export AWS_DB_PASSWORD="your-password"
+./scripts/apply_migrations_aws.sh
+```
+
+**For detailed production deployment instructions, see [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md)**
+
+---
+
 ## Step 1: Connect to Your Database
 
 ```bash
