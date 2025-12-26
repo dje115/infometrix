@@ -16,7 +16,9 @@ import {
   TextField,
   InputAdornment,
   LinearProgress,
-  Tooltip
+  Tooltip,
+  Alert,
+  AlertTitle
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -28,7 +30,8 @@ import {
   ArrowUpward as ArrowUpwardIcon,
   ArrowDownward as ArrowDownwardIcon,
   Flag as FlagIcon,
-  Warning as WarningIcon
+  Warning as WarningIcon,
+  Refresh as RefreshIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { customerAPI } from '../services/api';
@@ -38,6 +41,7 @@ const Customers: React.FC = () => {
   const navigate = useNavigate();
   const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showCustomerForm, setShowCustomerForm] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<any>(null);
@@ -51,10 +55,25 @@ const Customers: React.FC = () => {
   const loadCustomers = async () => {
     try {
       setLoading(true);
+      setError(null); // Clear any previous errors
       const response = await customerAPI.list();
       setCustomers(response.data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading customers:', error);
+      
+      // Handle timeout errors specifically
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        setError('Request timed out. The server may be slow. Please try again or check your connection.');
+      } else if (error.response?.status === 401) {
+        setError('Session expired. Please log in again.');
+      } else if (error.response?.status >= 500) {
+        setError('Server error. Please try again later.');
+      } else {
+        setError(error.response?.data?.detail || 'Failed to load customers. Please try again.');
+      }
+      
+      // Set empty array on error to prevent UI issues
+      setCustomers([]);
     } finally {
       setLoading(false);
     }

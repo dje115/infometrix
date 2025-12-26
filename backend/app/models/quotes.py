@@ -108,7 +108,7 @@ class Quote(BaseModel):
     approval_state = Column(Enum(QuoteApprovalState, **ENUM_KWARGS), default=QuoteApprovalState.NOT_REQUIRED, nullable=False)
     manual_mode = Column(Boolean, default=False, nullable=False)
     version_number = Column(Integer, default=1, nullable=False)
-    parent_quote_id = Column(String(36), ForeignKey("quotes.id"), nullable=True)
+    parent_quote_id = Column(String(36), ForeignKey("quotes.id"), nullable=True, index=True)
     sent_at = Column(DateTime(timezone=True), nullable=True)
     accepted_at = Column(DateTime(timezone=True), nullable=True)
     rejected_at = Column(DateTime(timezone=True), nullable=True)

@@ -26,7 +26,9 @@ import {
   MenuItem,
   Grid,
   Card,
-  CardContent
+  CardContent,
+  Alert,
+  AlertTitle
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -88,9 +90,12 @@ const Opportunities: React.FC = () => {
     }
   }, [searchParams, customers]);
 
+  const [error, setError] = useState<string | null>(null);
+
   const loadOpportunities = async () => {
     try {
       setLoading(true);
+      setError(null);
       const params: any = {
         sort_by: sortBy,
         sort_order: sortOrder
@@ -102,8 +107,20 @@ const Opportunities: React.FC = () => {
       
       const response = await opportunityAPI.list(params);
       setOpportunities(response.data || []);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading opportunities:', error);
+      
+      // Handle timeout errors specifically
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        setError('Request timed out. The server may be slow. Please try again or check your connection.');
+      } else if (error.response?.status === 401) {
+        setError('Session expired. Please log in again.');
+      } else if (error.response?.status >= 500) {
+        setError('Server error. Please try again later.');
+      } else {
+        setError(error.response?.data?.detail || 'Failed to load opportunities. Please try again.');
+      }
+      
       setOpportunities([]);
     } finally {
       setLoading(false);
@@ -207,6 +224,27 @@ const Opportunities: React.FC = () => {
           New Opportunity
         </Button>
       </Box>
+
+      {/* Error Alert */}
+      {error && (
+        <Alert 
+          severity="error" 
+          sx={{ mb: 3 }}
+          action={
+            <Button 
+              color="inherit" 
+              size="small" 
+              onClick={loadOpportunities}
+              startIcon={<RefreshIcon />}
+            >
+              Retry
+            </Button>
+          }
+        >
+          <AlertTitle>Error Loading Opportunities</AlertTitle>
+          {error}
+        </Alert>
+      )}
 
       {/* Stats Cards */}
       <Grid container spacing={3} sx={{ mb: 3 }}>

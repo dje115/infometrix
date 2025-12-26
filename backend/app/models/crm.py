@@ -214,7 +214,7 @@ class CustomerInteraction(BaseModel):
     
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     customer_id = Column(String(36), ForeignKey("customers.id"), nullable=False, index=True)
-    contact_id = Column(String(36), ForeignKey("contacts.id"), nullable=True)
+    contact_id = Column(String(36), ForeignKey("contacts.id"), nullable=True, index=True)
     
     # Interaction details
     interaction_type = Column(Enum(InteractionType), nullable=False)

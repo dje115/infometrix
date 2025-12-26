@@ -50,7 +50,8 @@ import {
   ArrowDownward as ArrowDownwardIcon,
   BusinessCenter as BusinessCenterIcon,
   Assignment as AssignmentIcon,
-  Architecture as ArchitectureIcon
+  Architecture as ArchitectureIcon,
+  Refresh as RefreshIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -86,6 +87,7 @@ const Leads: React.FC = () => {
   const navigate = useNavigate();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [showLeadForm, setShowLeadForm] = useState(false);
@@ -118,6 +120,7 @@ const Leads: React.FC = () => {
   const loadLeads = async () => {
     try {
       setLoading(true);
+      setError(null);
       // Fetch all campaign leads (discoveries) with sorting
       const params = {
         sort_by: sortBy,
@@ -125,8 +128,21 @@ const Leads: React.FC = () => {
       };
       const response = await campaignAPI.listAllLeads(params);
       setLeads(response.data?.data || []);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading discoveries:', error);
+      
+      // Handle timeout errors specifically
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        setError('Request timed out. The server may be slow. Please try again or check your connection.');
+      } else if (error.response?.status === 401) {
+        setError('Session expired. Please log in again.');
+      } else if (error.response?.status >= 500) {
+        setError('Server error. Please try again later.');
+      } else {
+        setError(error.response?.data?.detail || 'Failed to load discoveries. Please try again.');
+      }
+      
+      setLeads([]);
     } finally {
       setLoading(false);
     }
@@ -380,6 +396,28 @@ const Leads: React.FC = () => {
           </Button>
         </Box>
       </Box>
+
+      {/* Error Alert */}
+      {error && (
+        <Alert 
+          severity="error" 
+          sx={{ mb: 3 }}
+          action={
+            <Button 
+              color="inherit" 
+              size="small" 
+              onClick={loadLeads}
+              startIcon={<RefreshIcon />}
+            >
+              Retry
+            </Button>
+          }
+        >
+          <AlertTitle>Error Loading Discoveries</AlertTitle>
+          {error}
+        </Alert>
+      )}
+
       {/* Stats Cards */}
       <Grid container spacing={3} sx={{ mb: 3, justifyContent: 'center' }}>
         <Grid

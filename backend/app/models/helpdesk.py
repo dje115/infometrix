@@ -66,7 +66,7 @@ class Ticket(Base, TimestampMixin):
     # Customer and contact
     customer_id = Column(String(36), ForeignKey("customers.id"), nullable=True, index=True)
     contact_id = Column(String(36), ForeignKey("contacts.id"), nullable=True, index=True)
-    created_by_user_id = Column(String(36), ForeignKey("users.id"), nullable=True)  # Internal user who created
+    created_by_user_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)  # Internal user who created
     
     # Ticket details
     subject = Column(String(500), nullable=False)
