@@ -195,6 +195,8 @@ function App() {
             {/* Login and Signup load immediately (no Suspense) - critical path */}
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
+            {/* Catch-all route for unmatched paths during lazy loading */}
+            <Route path="*" element={<LoadingFallback />} />
           </Routes>
           <Suspense fallback={<LoadingFallback />}>
             <Routes>
