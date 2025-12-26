@@ -65,10 +65,17 @@ services:
       - MINIO_SECRET_KEY=minioadmin123
       - MINIO_BUCKET=ccs-quote-tool
       - MINIO_SECURE=false
+      # Database connection for migrations
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres_password_2025
+      - POSTGRES_DB=ccs_quote_tool
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      - ./apps/enforcement-api/migrations:/app/../apps/enforcement-api/migrations:ro
     depends_on:
       postgres:
         condition: service_healthy

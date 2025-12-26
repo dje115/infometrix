@@ -36,8 +36,17 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Development stage
 FROM base as development
 
+# Install PostgreSQL client for migrations
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy application code
 COPY . .
+
+# Copy entrypoint script
+COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Create non-root user
 RUN groupadd -r appuser && useradd -r -g appuser appuser
@@ -47,14 +56,24 @@ USER appuser
 # Expose port
 EXPOSE 8000
 
-# Command for development
+# Use entrypoint script to run migrations before starting
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
 # Production stage
 FROM base as production
 
+# Install PostgreSQL client for migrations
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy application code
 COPY . .
+
+# Copy entrypoint script
+COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Create non-root user
 RUN groupadd -r appuser && useradd -r -g appuser appuser
@@ -68,5 +87,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Command for production
+# Use entrypoint script to run migrations before starting
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["gunicorn", "main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
