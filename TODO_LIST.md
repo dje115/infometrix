@@ -6,6 +6,81 @@
 
 ---
 
+## 🔴 PRIORITY 0: CRITICAL ERRORS (Fix Immediately - Blocking Users)
+
+### Frontend Route & API Timeout Errors
+
+- [ ] **Fix Route Matching Warnings**
+  - **Issue:** Console shows "No routes matched location '/leads'" and "/opportunities"
+  - **Location:** `frontend/src/App.tsx` and navigation components
+  - **Symptoms:** 
+    - Warnings in browser console: "No routes matched location"
+    - Routes exist but navigation may be incorrect
+  - **Investigation Needed:**
+    - Check if routes are correctly defined
+    - Verify navigation links match route paths
+    - Check for case sensitivity issues
+  - **Status:** ⏳ Pending
+
+- [ ] **Fix API Timeout Errors (30 second timeouts)**
+  - **Issue:** Customer API calls timing out after 30 seconds
+  - **Location:** `frontend/src/pages/Customers.tsx:57`
+  - **Error:** `AxiosError: timeout of 30000ms exceeded`
+  - **Root Cause:** Likely slow database queries due to missing indexes
+  - **Immediate Actions:**
+    1. Apply database migrations (Priority 1)
+    2. Check backend logs for slow queries
+    3. Verify backend is running and accessible
+    4. Consider increasing timeout temporarily while fixing root cause
+  - **Status:** ⏳ Pending
+
+- [ ] **Add Error Handling for API Timeouts**
+  - **File:** `frontend/src/pages/Customers.tsx` and other list pages
+  - **Action:** Add proper error handling and user-friendly error messages
+  - **Code Example:**
+    ```typescript
+    catch (error: any) {
+      if (error.code === 'ECONNABORTED') {
+        setError('Request timed out. The server may be slow. Please try again.');
+      } else {
+        setError(error.response?.data?.detail || 'Failed to load customers');
+      }
+      console.error('Error loading customers:', error);
+    }
+    ```
+  - **Status:** ⏳ Pending
+
+- [ ] **Add Loading States and Retry Logic**
+  - **File:** All list pages (Customers, Leads, Opportunities, etc.)
+  - **Action:** 
+    - Add loading indicators
+    - Add retry button for failed requests
+    - Show helpful error messages
+  - **Status:** ⏳ Pending
+
+- [ ] **Verify Backend API Endpoints Are Responding**
+  - **Action:** Test all API endpoints manually
+  - **Endpoints to Test:**
+    - `GET /api/v1/customers/` - Customer list
+    - `GET /api/v1/customers/leads` - Leads list
+    - `GET /api/v1/opportunities` - Opportunities list
+  - **Status:** ⏳ Pending
+
+- [ ] **Check Backend Database Connection**
+  - **Action:** Verify database is accessible and queries are executing
+  - **Check:** Backend logs for database connection errors
+  - **Status:** ⏳ Pending
+
+- [ ] **Investigate Navigation Link Mismatches**
+  - **File:** `frontend/src/types/modules.ts` and `frontend/src/components/Layout.tsx`
+  - **Issue:** Navigation links may not match route definitions
+  - **Action:** 
+    - Compare navigation paths with route definitions
+    - Fix any mismatches
+  - **Status:** ⏳ Pending
+
+---
+
 ## 🔴 PRIORITY 1: CRITICAL PERFORMANCE FIXES (Apply Immediately)
 
 ### Database Migrations
@@ -385,6 +460,12 @@
 - [x] Created migration scripts for missing indexes
 - [x] Created migration scripts for composite indexes
 - [x] Created comprehensive documentation
+- [x] Identified route matching and timeout errors
+
+### Critical Issues Found 🔴
+- [ ] Route matching warnings (blocking navigation)
+- [ ] API timeout errors (30 second timeouts - blocking data loading)
+- [ ] Missing error handling for timeouts
 
 ### In Progress ⏳
 - [ ] Apply database migrations
