@@ -108,6 +108,10 @@ export default defineConfig({
       // Fix dev-time ESM/CJS interop: @mui/utils deepmerge imports named exports from react-is
       // Ensure react-is is pre-bundled so named exports like `isValidElementType` work in the browser.
       'react-is',
+      // Fix dev-time ESM/CJS interop: MUI imports default from prop-types
+      'prop-types',
+      // Fix dev-time ESM/CJS interop: emotion imports default from hoist-non-react-statics (CJS)
+      'hoist-non-react-statics',
       '@mui/material',
       '@mui/system',
     ],
@@ -120,7 +124,7 @@ export default defineConfig({
       '@': '/src'
     },
     // Ensure single instances across nested node_modules (prevents subtle runtime issues)
-    dedupe: ['react', 'react-dom', 'react-is']
+    dedupe: ['react', 'react-dom', 'react-is', 'prop-types', 'hoist-non-react-statics']
   }
 })
 
