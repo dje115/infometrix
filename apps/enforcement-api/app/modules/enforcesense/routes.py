@@ -17,6 +17,7 @@ CRITICAL FINANCIAL RULES:
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Response, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func
+from sqlalchemy.orm import selectinload
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, EmailStr
 from datetime import datetime, timezone
@@ -638,25 +639,34 @@ async def list_cases(
     limit: int = Query(50, ge=1, le=100),
     search: Optional[str] = Query(None),
     status: Optional[CaseStatus] = Query(None),
+    case_type: Optional[CaseType] = Query(None),
     debtor_id: Optional[str] = Query(None),
     client_id: Optional[str] = Query(None),
+    sort_by: str = Query("created_at"),
+    sort_order: str = Query("desc"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    response: Optional[Response] = None
 ):
-    """List cases with tenant isolation"""
+    """List cases with tenant isolation (OPTIMIZED with eager loading)"""
     await check_permission(current_user, "enforcesense:view_cases")
     
-    stmt = select(EnforcementCase).where(
+    # Base query with eager loading to prevent N+1 queries
+    stmt = select(EnforcementCase).options(
+        selectinload(EnforcementCase.debtor),
+        selectinload(EnforcementCase.client)
+    ).where(
         and_(
             EnforcementCase.tenant_id == current_user.tenant_id,
             EnforcementCase.is_deleted == False
         )
     )
     
+    # Apply filters
     if search:
-        # Join with Debtor and Client for comprehensive search
-        stmt = stmt.outerjoin(Debtor, EnforcementCase.debtor_id == Debtor.id)
-        stmt = stmt.outerjoin(EnforcementClient, EnforcementCase.client_id == EnforcementClient.id)
+        # Use proper joins for search (not outerjoin - we want matches)
+        stmt = stmt.join(Debtor, EnforcementCase.debtor_id == Debtor.id)
+        stmt = stmt.join(EnforcementClient, EnforcementCase.client_id == EnforcementClient.id)
         stmt = stmt.where(
             or_(
                 EnforcementCase.case_reference.ilike(f"%{search}%"),
@@ -681,19 +691,19 @@ async def list_cases(
     if client_id:
         stmt = stmt.where(EnforcementCase.client_id == client_id)
     
-    # Get total count before pagination (need to build count query separately)
-    # Create a base query for counting
-    count_base = select(EnforcementCase).where(
+    # Optimized count query (simpler, uses indexes)
+    count_stmt = select(func.count(EnforcementCase.id)).where(
         and_(
             EnforcementCase.tenant_id == current_user.tenant_id,
             EnforcementCase.is_deleted == False
         )
     )
     
+    # Apply same filters to count query
     if search:
-        count_base = count_base.outerjoin(Debtor, EnforcementCase.debtor_id == Debtor.id)
-        count_base = count_base.outerjoin(EnforcementClient, EnforcementCase.client_id == EnforcementClient.id)
-        count_base = count_base.where(
+        count_stmt = count_stmt.join(Debtor, EnforcementCase.debtor_id == Debtor.id)
+        count_stmt = count_stmt.join(EnforcementClient, EnforcementCase.client_id == EnforcementClient.id)
+        count_stmt = count_stmt.where(
             or_(
                 EnforcementCase.case_reference.ilike(f"%{search}%"),
                 EnforcementCase.client_reference.ilike(f"%{search}%"),
@@ -706,15 +716,17 @@ async def list_cases(
         )
     
     if status:
-        count_base = count_base.where(EnforcementCase.status == status)
+        count_stmt = count_stmt.where(EnforcementCase.status == status)
+    
+    if case_type:
+        count_stmt = count_stmt.where(EnforcementCase.case_type == case_type)
     
     if debtor_id:
-        count_base = count_base.where(EnforcementCase.debtor_id == debtor_id)
+        count_stmt = count_stmt.where(EnforcementCase.debtor_id == debtor_id)
     
     if client_id:
-        count_base = count_base.where(EnforcementCase.client_id == client_id)
+        count_stmt = count_stmt.where(EnforcementCase.client_id == client_id)
     
-    count_stmt = select(func.count()).select_from(count_base.subquery())
     count_result = await db.execute(count_stmt)
     total_count = count_result.scalar() or 0
     
@@ -751,10 +763,14 @@ async def get_case(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get a single case with related entities"""
+    """Get a single case with related entities (OPTIMIZED with eager loading)"""
     await check_permission(current_user, "enforcesense:view_cases")
     
-    stmt = select(EnforcementCase).where(
+    # Use eager loading to prevent N+1 queries
+    stmt = select(EnforcementCase).options(
+        selectinload(EnforcementCase.debtor),
+        selectinload(EnforcementCase.client)
+    ).where(
         and_(
             EnforcementCase.id == case_id,
             EnforcementCase.tenant_id == current_user.tenant_id,
@@ -769,15 +785,6 @@ async def get_case(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Case not found"
         )
-    
-    # Load related entities
-    debtor_stmt = select(Debtor).where(Debtor.id == case.debtor_id)
-    debtor_result = await db.execute(debtor_stmt)
-    case.debtor = debtor_result.scalar_one_or_none()
-    
-    client_stmt = select(EnforcementClient).where(EnforcementClient.id == case.client_id)
-    client_result = await db.execute(client_stmt)
-    case.client = client_result.scalar_one_or_none()
     
     return case
 
@@ -897,10 +904,14 @@ async def update_case(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Update a case"""
+    """Update a case (OPTIMIZED with eager loading)"""
     await check_permission(current_user, "enforcesense:update_case")
     
-    stmt = select(EnforcementCase).where(
+    # Use eager loading to prevent N+1 queries
+    stmt = select(EnforcementCase).options(
+        selectinload(EnforcementCase.debtor),
+        selectinload(EnforcementCase.client)
+    ).where(
         and_(
             EnforcementCase.id == case_id,
             EnforcementCase.tenant_id == current_user.tenant_id,
@@ -953,15 +964,6 @@ async def update_case(
     
     await db.commit()
     await db.refresh(case)
-    
-    # Load related entities
-    debtor_stmt = select(Debtor).where(Debtor.id == case.debtor_id)
-    debtor_result = await db.execute(debtor_stmt)
-    case.debtor = debtor_result.scalar_one_or_none()
-    
-    client_stmt = select(EnforcementClient).where(EnforcementClient.id == case.client_id)
-    client_result = await db.execute(client_stmt)
-    case.client = client_result.scalar_one_or_none()
     
     return case
 
