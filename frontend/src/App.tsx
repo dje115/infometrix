@@ -642,6 +642,8 @@ function App() {
             element={<DebtorPortalCases />}
           />
           <Route path="/" element={<Navigate to="/dashboard" />} />
+          {/* Catch-all route - redirect to dashboard if route not found */}
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </Suspense>
         </BrowserRouter>
