@@ -711,11 +711,13 @@ async def get_ticket(
         from sqlalchemy import select
         
         # Use async session with select
+        # OPTIMIZED: Use eager loading to prevent N+1 queries
         # Note: When using joinedload with collections, we need unique() to avoid duplicate rows
         stmt = select(Ticket).options(
             joinedload(Ticket.comments),
             joinedload(Ticket.history),
-            joinedload(Ticket.assigned_to)
+            joinedload(Ticket.assigned_to),
+            joinedload(Ticket.customer)  # Eager load customer to prevent N+1 query
         ).where(
             Ticket.id == ticket_id,
             Ticket.tenant_id == current_user.tenant_id
@@ -731,15 +733,10 @@ async def get_ticket(
         if ticket.assigned_to_id and ticket.assigned_to:
             assigned_to_name = ticket.assigned_to.name if hasattr(ticket.assigned_to, 'name') else ticket.assigned_to.email if hasattr(ticket.assigned_to, 'email') else None
         
-        # Get customer name if available
+        # Get customer name if available (now loaded via eager loading)
         customer_name = None
-        if ticket.customer_id:
-            from app.models.crm import Customer
-            customer_stmt = select(Customer).where(Customer.id == ticket.customer_id)
-            customer_result = await db.execute(customer_stmt)
-            customer = customer_result.scalar_one_or_none()
-            if customer:
-                customer_name = customer.company_name
+        if ticket.customer_id and ticket.customer:
+            customer_name = ticket.customer.company_name
         
         # Parse AI suggestions if it's a string (JSON)
         ai_suggestions = ticket.ai_suggestions

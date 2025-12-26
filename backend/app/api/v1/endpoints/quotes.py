@@ -539,20 +539,25 @@ async def get_quote(
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found")
     
-    # Find opportunities that have this quote_id in their quote_ids array
+    # OPTIMIZED: Use PostgreSQL JSONB containment query instead of loading all opportunities
+    # This is much more efficient than loading all opportunities and filtering in Python
     from app.models.opportunities import Opportunity
-    opp_stmt = select(Opportunity).where(
-        Opportunity.tenant_id == current_user.tenant_id,
-        Opportunity.is_deleted == False
+    from sqlalchemy import cast, String
+    from sqlalchemy.dialects.postgresql import JSONB
+    
+    # Use PostgreSQL JSONB @> operator to find opportunities containing this quote_id
+    # This uses database-level filtering instead of Python-level filtering
+    opp_stmt = select(Opportunity.id).where(
+        and_(
+            Opportunity.tenant_id == current_user.tenant_id,
+            Opportunity.is_deleted == False,
+            # PostgreSQL JSONB containment: quote_ids @> '["quote_id"]'::jsonb
+            # This checks if the quote_id is in the quote_ids array
+            cast(Opportunity.quote_ids, JSONB).contains([quote_id])
+        )
     )
     opp_result = await db.execute(opp_stmt)
-    all_opportunities = opp_result.scalars().all()
-    
-    # Filter opportunities that have this quote_id in their quote_ids
-    linked_opportunity_ids = []
-    for opp in all_opportunities:
-        if opp.quote_ids and isinstance(opp.quote_ids, list) and quote_id in opp.quote_ids:
-            linked_opportunity_ids.append(opp.id)
+    linked_opportunity_ids = [row[0] for row in opp_result.all()]
     
     # Convert quote to dict and add opportunity_ids
     quote_dict = {
