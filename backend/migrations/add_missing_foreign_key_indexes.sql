@@ -59,3 +59,5 @@ CREATE INDEX IF NOT EXISTS idx_product_content_history_verified_by
 ON product_content_history(verified_by) 
 WHERE verified_by IS NOT NULL;
 
+
+

@@ -86,34 +86,35 @@ async def websocket_endpoint(
         # WebSocket handshake is an HTTP request, so cookies are available
         token = access_token_cookie
         
-        # If no cookie, try to get token from first message (fallback for clients without cookies)
-        if not token:
-            try:
-                # Set timeout for auth message (5 seconds)
-                import asyncio
-                auth_data = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
-                auth_message = json.loads(auth_data)
-                
-                if auth_message.get("type") != "auth":
-                    await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="First message must be auth message")
-                    return
-                
-                # Get token from message (may be empty if cookie is being used)
-                message_token = auth_message.get("token", "")
-                if message_token:
-                    token = message_token
-                
-                # If still no token, authentication will fail below
-                if not token:
-                    await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Missing token in auth message or cookie")
-                    return
-                    
-            except asyncio.TimeoutError:
-                await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Authentication timeout - no auth message received")
+        # Always wait for auth message to ensure proper handshake
+        # The message may contain a token or be empty (indicating cookie should be used)
+        try:
+            # Set timeout for auth message (5 seconds)
+            import asyncio
+            auth_data = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+            auth_message = json.loads(auth_data)
+            
+            if auth_message.get("type") != "auth":
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="First message must be auth message")
                 return
-            except json.JSONDecodeError:
-                await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA, reason="Invalid auth message format - expected JSON")
+            
+            # Get token from message (may be empty if cookie is being used)
+            message_token = auth_message.get("token", "")
+            # Use message token if provided, otherwise rely on cookie
+            if message_token:
+                token = message_token
+            
+            # If still no token after checking both cookie and message, fail authentication
+            if not token:
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Missing token in auth message or cookie")
                 return
+                
+        except asyncio.TimeoutError:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Authentication timeout - no auth message received")
+            return
+        except json.JSONDecodeError:
+            await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA, reason="Invalid auth message format - expected JSON")
+            return
         
         # Authenticate connection
         try:

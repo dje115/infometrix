@@ -26,11 +26,18 @@ export const useWebSocket = (): UseWebSocketReturn => {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const eventHandlersRef = useRef<Map<string, Set<(event: WebSocketEvent) => void>>>(new Map());
   const reconnectAttemptsRef = useRef(0);
+  const isConnectingRef = useRef(false); // Track if connection is in progress
+  const hasConnectedRef = useRef(false); // Track if we've successfully connected at least once
   const maxReconnectAttempts = 5;
   const reconnectDelay = 3000; // 3 seconds
 
   const connect = useCallback(async () => {
     // Prevent multiple simultaneous connections
+    if (isConnectingRef.current) {
+      console.log('[WebSocket] Connection already in progress, skipping');
+      return;
+    }
+    
     if (wsRef.current && wsRef.current.readyState === WebSocket.CONNECTING) {
       console.log('[WebSocket] Connection already in progress, skipping');
       return;
@@ -40,6 +47,8 @@ export const useWebSocket = (): UseWebSocketReturn => {
       console.log('[WebSocket] Already connected, skipping');
       return;
     }
+    
+    isConnectingRef.current = true;
 
     // SECURITY: WebSocket handshake sends HttpOnly cookies automatically
     // Backend WebSocket endpoint reads token from cookies in handshake (preferred)
@@ -127,6 +136,8 @@ export const useWebSocket = (): UseWebSocketReturn => {
         console.log('[WebSocket] Connected');
         setIsConnected(true);
         reconnectAttemptsRef.current = 0;
+        isConnectingRef.current = false;
+        hasConnectedRef.current = true;
         
         // SECURITY: Token is read from HttpOnly cookie by backend during handshake (preferred)
         // We also send token in auth message as fallback (cookie might not be available)
@@ -221,19 +232,29 @@ export const useWebSocket = (): UseWebSocketReturn => {
       ws.onerror = (error) => {
         console.error('[WebSocket] Error:', error);
         setIsConnected(false);
+        isConnectingRef.current = false;
       };
 
       ws.onclose = (event) => {
         console.log('[WebSocket] Disconnected', event.code, event.reason);
         setIsConnected(false);
         setTenantId(null);
+        isConnectingRef.current = false;
         
         // Clear ping interval if it exists
         if ((ws as any).pingIntervalId) {
           clearInterval((ws as any).pingIntervalId);
         }
 
-        // Attempt to reconnect only if not a normal closure
+        // Clear the ref if this is a normal closure from component unmounting
+        // This prevents React StrictMode from trying to reconnect on remount
+        if (event.code === 1000 && event.reason === 'Component unmounting') {
+          console.log('[WebSocket] Normal closure from component unmount, clearing ref');
+          wsRef.current = null;
+          return; // Don't attempt reconnection
+        }
+
+        // Attempt to reconnect only if not a normal closure (1000)
         if (event.code !== 1000 && reconnectAttemptsRef.current < maxReconnectAttempts) {
           reconnectAttemptsRef.current++;
           console.log(`[WebSocket] Reconnecting (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`);
@@ -243,8 +264,10 @@ export const useWebSocket = (): UseWebSocketReturn => {
           }, reconnectDelay * reconnectAttemptsRef.current);
         } else if (event.code === 1000) {
           console.log('[WebSocket] Normal closure, not reconnecting');
+          wsRef.current = null; // Clear ref on normal closure
         } else {
           console.error('[WebSocket] Max reconnection attempts reached');
+          wsRef.current = null; // Clear ref when max attempts reached
         }
       };
 
@@ -252,30 +275,42 @@ export const useWebSocket = (): UseWebSocketReturn => {
     } catch (error) {
       console.error('[WebSocket] Failed to connect:', error);
       setIsConnected(false);
+      isConnectingRef.current = false;
     }
   }, []); // Remove tenantId dependency to prevent reconnection loops
 
   useEffect(() => {
-    // Connect on mount
-    connect();
+    // Connect on mount - but only if not already connected/connecting
+    // Also check if we've already connected (prevents React StrictMode double-connect)
+    const shouldConnect = !wsRef.current || 
+                         wsRef.current.readyState === WebSocket.CLOSED ||
+                         wsRef.current.readyState === WebSocket.CLOSING;
+    
+    if (shouldConnect && !isConnectingRef.current) {
+      connect();
+    }
 
     // Cleanup on unmount
     return () => {
+      // Clear any pending reconnection attempts
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
       }
-      if (wsRef.current) {
+      
+      // Only close WebSocket if it exists and is open/connecting
+      if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
         // Clear ping interval if it exists
         if ((wsRef.current as any).pingIntervalId) {
           clearInterval((wsRef.current as any).pingIntervalId);
         }
-        // Close with normal closure code
+        // Close with normal closure code and specific reason
+        // This helps distinguish between React StrictMode cleanup and real unmount
         try {
           wsRef.current.close(1000, 'Component unmounting');
         } catch (error) {
           // Ignore errors during cleanup
         }
-        wsRef.current = null;
       }
     };
   }, [connect]);

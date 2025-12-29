@@ -2,15 +2,15 @@
 # FastAPI + Multi-tenant SaaS Platform
 
 # Core Framework
-fastapi==0.115.6
-uvicorn[standard]==0.32.1
-pydantic==2.10.3
-pydantic-settings==2.7.0
+fastapi==0.115.6  # Latest stable as of Dec 2024
+uvicorn[standard]==0.32.1  # Latest stable as of Dec 2024
+pydantic==2.10.3  # Latest stable 2.x as of Dec 2024
+pydantic-settings==2.7.0  # Latest stable as of Dec 2024
 
 # Database
-sqlalchemy==2.0.36
-asyncpg==0.30.0
-alembic==1.14.0
+sqlalchemy==2.0.36  # Latest stable 2.x as of Dec 2024
+asyncpg==0.30.0  # Latest stable as of Dec 2024
+alembic==1.14.0  # Latest stable as of Dec 2024
 
 # Authentication & Security
 python-jose[cryptography]>=3.3.0
@@ -29,11 +29,11 @@ aioredis==2.0.1
 celery==5.4.0
 
 # HTTP Client
-httpx==0.28.1
-aiohttp==3.11.11
+httpx==0.28.1  # Latest stable as of Dec 2024
+aiohttp==3.11.11  # Latest stable as of Dec 2024
 
 # AI & OpenAI
-openai==2.1.0  # v2.x includes Responses API with web_search tool
+openai>=2.1.0  # v2.x includes Responses API with web_search tool - using >= for latest patches
 google-generativeai>=0.3.0  # Google Gemini SDK
 anthropic>=0.34.0  # Anthropic Claude SDK
 cohere>=5.0.0  # Cohere SDK

@@ -82,3 +82,5 @@ Write-Host "1. Restart backend: docker-compose restart backend"
 Write-Host "2. Test the application - timeouts should be resolved"
 Write-Host ""
 
+
+

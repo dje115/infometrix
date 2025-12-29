@@ -48,3 +48,5 @@ ON customer_interactions(customer_id, interaction_type);
 CREATE INDEX IF NOT EXISTS idx_quote_items_quote_deleted 
 ON quote_items(quote_id, is_deleted);
 
+
+

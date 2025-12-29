@@ -74,7 +74,7 @@ async def get_version_info():
         
         # Ensure we have a version
         if not version:
-            version = "3.7.0"  # Ultimate fallback
+            version = "3.7.0"  # Ultimate fallback - Updated Dec 2024
         
         return VersionResponse(
             version=version,
@@ -88,7 +88,7 @@ async def get_version_info():
         logger = logging.getLogger(__name__)
         logger.error(f"Error getting version info: {e}", exc_info=True)
         return VersionResponse(
-            version=settings.VERSION or "3.7.0",
+            version=settings.VERSION or "3.7.0",  # Updated Dec 2024
             build_date=os.getenv('BUILD_DATE', ''),
             build_hash=os.getenv('BUILD_HASH', ''),
             environment=os.getenv('ENVIRONMENT', settings.ENVIRONMENT)

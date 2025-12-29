@@ -118,7 +118,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     }
   };
 
-  // Fetch tenant module configuration
+  // Fetch tenant module configuration and check tooltip status in parallel
   useEffect(() => {
     const fetchTenantConfig = async () => {
       try {
@@ -143,14 +143,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       }
     };
     
-    fetchTenantConfig();
-  }, []);
-
-  // Check on component mount and when user changes
-  useEffect(() => {
-    if (user.email) {
-      checkTooltipStatus();
-    }
+    // Run both in parallel for faster loading
+    Promise.all([
+      fetchTenantConfig(),
+      user.email ? checkTooltipStatus() : Promise.resolve()
+    ]).catch(err => {
+      console.error('Error loading layout data:', err);
+    });
   }, [user.email]);
 
   const handleTooltipComplete = () => {

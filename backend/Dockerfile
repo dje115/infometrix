@@ -2,7 +2,7 @@
 FROM python:3.12-slim as base
 
 # Accept build arguments
-ARG APP_VERSION=3.6.0
+ARG APP_VERSION=3.7.0
 ARG BUILD_DATE
 ARG BUILD_HASH
 
@@ -30,8 +30,8 @@ WORKDIR /app
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies with increased timeout and retries
+RUN pip install --no-cache-dir --default-timeout=300 --retries=5 -r requirements.txt
 
 # Development stage
 FROM base as development

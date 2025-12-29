@@ -114,9 +114,9 @@ export default defineConfig({
       'hoist-non-react-statics',
       '@mui/material',
       '@mui/system',
-    ],
-    exclude: [
-      '@mui/icons-material', // Exclude icons from pre-bundling (large, not needed on login)
+      // CRITICAL: Pre-bundle MUI icons to prevent hundreds of individual requests
+      // This dramatically improves dev server performance
+      '@mui/icons-material',
     ],
   },
   resolve: {

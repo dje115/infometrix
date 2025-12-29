@@ -12,7 +12,7 @@ const apiClient = axios.create({
     'Content-Type': 'application/json',
   },
   withCredentials: true,  // IMPORTANT: Required for HttpOnly cookies
-  timeout: 30000,  // 30 second timeout
+  timeout: 10000,  // 10 second timeout (reduced for faster failure detection)
 });
 
 // Track refresh token request to prevent infinite loops

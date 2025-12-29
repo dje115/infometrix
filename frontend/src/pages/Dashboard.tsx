@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -167,8 +167,13 @@ const Dashboard: React.FC = () => {
   const [statusMenuAnchor, setStatusMenuAnchor] = useState<null | HTMLElement>(null);
   const [selectedLead, setSelectedLead] = useState<any>(null);
   const [currentTab, setCurrentTab] = useState(0);
+  const hasLoadedRef = useRef(false); // Prevent duplicate loads
 
   useEffect(() => {
+    // Prevent duplicate calls from React StrictMode double-mounting
+    if (hasLoadedRef.current) return;
+    hasLoadedRef.current = true;
+    
     loadDashboard();
   }, []);
 

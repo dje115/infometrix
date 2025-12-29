@@ -79,3 +79,5 @@ echo "1. Restart backend: docker-compose restart backend"
 echo "2. Test the application - timeouts should be resolved"
 echo ""
 
+
+

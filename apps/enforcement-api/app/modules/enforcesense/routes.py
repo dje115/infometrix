@@ -646,7 +646,7 @@ async def list_cases(
     sort_order: str = Query("desc"),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
-    response: Optional[Response] = None
+    response: Response = None
 ):
     """List cases with tenant isolation (OPTIMIZED with eager loading)"""
     await check_permission(current_user, "enforcesense:view_cases")
@@ -750,8 +750,8 @@ async def list_cases(
     result = await db.execute(stmt)
     cases = result.scalars().all()
     
-    # Set total count in response headers
-    if response:
+    # Set total count in response headers (Response is injected by FastAPI)
+    if response is not None:
         response.headers["X-Total-Count"] = str(total_count)
     
     return cases
@@ -795,36 +795,42 @@ async def create_case(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Create a new case"""
+    """Create a new case (OPTIMIZED with parallel validation queries)"""
     await check_permission(current_user, "enforcesense:create_case")
     
-    # Verify debtor exists and belongs to tenant
-    debtor_stmt = select(Debtor).where(
-        and_(
-            Debtor.id == case_data.debtor_id,
-            Debtor.tenant_id == current_user.tenant_id,
-            Debtor.is_deleted == False
+    # Verify debtor and client exist in parallel for better performance
+    import asyncio
+    
+    debtor_task = db.execute(
+        select(Debtor).where(
+            and_(
+                Debtor.id == case_data.debtor_id,
+                Debtor.tenant_id == current_user.tenant_id,
+                Debtor.is_deleted == False
+            )
         )
     )
-    debtor_result = await db.execute(debtor_stmt)
+    
+    client_task = db.execute(
+        select(EnforcementClient).where(
+            and_(
+                EnforcementClient.id == case_data.client_id,
+                EnforcementClient.tenant_id == current_user.tenant_id,
+                EnforcementClient.is_deleted == False
+            )
+        )
+    )
+    
+    # Execute both queries in parallel
+    debtor_result, client_result = await asyncio.gather(debtor_task, client_task)
     debtor = debtor_result.scalar_one_or_none()
+    client = client_result.scalar_one_or_none()
     
     if not debtor:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Debtor not found"
         )
-    
-    # Verify client exists and belongs to tenant
-    client_stmt = select(EnforcementClient).where(
-        and_(
-            EnforcementClient.id == case_data.client_id,
-            EnforcementClient.tenant_id == current_user.tenant_id,
-            EnforcementClient.is_deleted == False
-        )
-    )
-    client_result = await db.execute(client_stmt)
-    client = client_result.scalar_one_or_none()
     
     if not client:
         raise HTTPException(
@@ -973,57 +979,70 @@ async def get_dashboard(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get EnforceSense dashboard statistics"""
+    """Get EnforceSense dashboard statistics (OPTIMIZED with parallel queries)"""
     await check_permission(current_user, "enforcesense:view")
     
     tenant_id = current_user.tenant_id
     
-    # Count debtors
-    debtors_stmt = select(func.count(Debtor.id)).where(
-        and_(
-            Debtor.tenant_id == tenant_id,
-            Debtor.is_deleted == False
+    # Execute all independent queries in parallel for better performance
+    import asyncio
+    
+    # Parallel queries
+    debtors_task = db.execute(
+        select(func.count(Debtor.id)).where(
+            and_(
+                Debtor.tenant_id == tenant_id,
+                Debtor.is_deleted == False
+            )
         )
     )
-    debtors_result = await db.execute(debtors_stmt)
+    
+    clients_task = db.execute(
+        select(func.count(EnforcementClient.id)).where(
+            and_(
+                EnforcementClient.tenant_id == tenant_id,
+                EnforcementClient.is_deleted == False
+            )
+        )
+    )
+    
+    cases_task = db.execute(
+        select(
+            EnforcementCase.status,
+            func.count(EnforcementCase.id).label("count")
+        ).where(
+            and_(
+                EnforcementCase.tenant_id == tenant_id,
+                EnforcementCase.is_deleted == False
+            )
+        ).group_by(EnforcementCase.status)
+    )
+    
+    financials_task = db.execute(
+        select(
+            func.sum(EnforcementCase.original_amount).label("total_original"),
+            func.sum(EnforcementCase.fees_charged).label("total_fees"),
+            func.sum(EnforcementCase.payments_received).label("total_payments"),
+            func.sum(EnforcementCase.current_balance).label("total_balance")
+        ).where(
+            and_(
+                EnforcementCase.tenant_id == tenant_id,
+                EnforcementCase.is_deleted == False
+            )
+        )
+    )
+    
+    # Execute all queries in parallel
+    debtors_result, clients_result, cases_result, financials_result = await asyncio.gather(
+        debtors_task,
+        clients_task,
+        cases_task,
+        financials_task
+    )
+    
     total_debtors = debtors_result.scalar() or 0
-    
-    # Count clients
-    clients_stmt = select(func.count(EnforcementClient.id)).where(
-        and_(
-            EnforcementClient.tenant_id == tenant_id,
-            EnforcementClient.is_deleted == False
-        )
-    )
-    clients_result = await db.execute(clients_stmt)
     total_clients = clients_result.scalar() or 0
-    
-    # Count cases by status
-    cases_stmt = select(
-        EnforcementCase.status,
-        func.count(EnforcementCase.id).label("count")
-    ).where(
-        and_(
-            EnforcementCase.tenant_id == tenant_id,
-            EnforcementCase.is_deleted == False
-        )
-    ).group_by(EnforcementCase.status)
-    cases_result = await db.execute(cases_stmt)
     cases_by_status = {row.status.value: row.count for row in cases_result}
-    
-    # Total financials
-    financials_stmt = select(
-        func.sum(EnforcementCase.original_amount).label("total_original"),
-        func.sum(EnforcementCase.fees_charged).label("total_fees"),
-        func.sum(EnforcementCase.payments_received).label("total_payments"),
-        func.sum(EnforcementCase.current_balance).label("total_balance")
-    ).where(
-        and_(
-            EnforcementCase.tenant_id == tenant_id,
-            EnforcementCase.is_deleted == False
-        )
-    )
-    financials_result = await db.execute(financials_stmt)
     financials = financials_result.first()
     
     return {

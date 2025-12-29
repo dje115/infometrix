@@ -46,7 +46,7 @@ services:
       dockerfile: Dockerfile
       target: development
       args:
-        APP_VERSION: ${APP_VERSION:-3.6.0}
+        APP_VERSION: ${APP_VERSION:-3.7.0}
         BUILD_DATE: ${BUILD_DATE:-}
         BUILD_HASH: ${BUILD_HASH:-}
     container_name: infometrix-backend
@@ -186,7 +186,7 @@ services:
       dockerfile: Dockerfile
       target: development
       args:
-        APP_VERSION: ${APP_VERSION:-3.6.0}
+        APP_VERSION: ${APP_VERSION:-3.7.0}
         BUILD_DATE: ${BUILD_DATE:-}
         BUILD_HASH: ${BUILD_HASH:-}
     container_name: infometrix-celery-worker
@@ -228,7 +228,7 @@ services:
       dockerfile: Dockerfile
       target: development
       args:
-        APP_VERSION: ${APP_VERSION:-3.6.0}
+        APP_VERSION: ${APP_VERSION:-3.7.0}
         BUILD_DATE: ${BUILD_DATE:-}
         BUILD_HASH: ${BUILD_HASH:-}
     container_name: infometrix-celery-beat
